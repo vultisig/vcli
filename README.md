@@ -222,6 +222,33 @@ make port-forward     # Access services locally
 make destroy          # Tear down infrastructure
 ```
 
+### Using vcli in K8s
+
+The vcli pod is deployed in the cluster for testing. First, upload your vault:
+
+```bash
+# Create vault secret from your .vult file
+kubectl create secret generic test-vault -n verifier \
+  --from-file=backup.vult=/path/to/your/vault.vult
+
+# Restart vcli pod to pick up the secret
+kubectl delete pod vcli -n verifier
+kubectl apply -k k8s/overlays/local  # or production
+```
+
+Then exec into vcli to run commands:
+
+```bash
+# Interactive shell
+kubectl exec -it vcli -n verifier -- sh
+
+# Or run commands directly
+kubectl exec vcli -n verifier -- vcli vault import -f /vault/backup.vult -p "password"
+kubectl exec vcli -n verifier -- vcli plugin install vultisig-dca-0000 -p "password"
+kubectl exec vcli -n verifier -- vcli report
+kubectl exec vcli -n verifier -- vcli policy status <policy-id>
+```
+
 ---
 
 ## Directory Structure
@@ -229,8 +256,9 @@ make destroy          # Tear down infrastructure
 ```
 vultisig-cluster/
 ├── local/                    # Local development
-│   ├── cmd/devctl/           # CLI source code
-│   ├── vcli.sh               # CLI wrapper script
+│   ├── cmd/devctl/           # vcli source code
+│   ├── Dockerfile            # vcli container image
+│   ├── vcli.sh               # CLI wrapper script (local)
 │   ├── cluster.yaml.example  # Config template
 │   ├── vault.env.example     # Vault config template
 │   └── configs/              # Test policy configs
@@ -244,10 +272,11 @@ vultisig-cluster/
 │   │   ├── dca/              # DCA plugin stack
 │   │   ├── relay/            # Relay service
 │   │   ├── vultiserver/      # VultiServer
+│   │   ├── vcli/             # Test CLI pod
 │   │   └── monitoring/       # Prometheus, Grafana
 │   └── overlays/
-│       ├── local/            # Includes relay + vultiserver
-│       └── production/       # Uses api.vultisig.com
+│       ├── local/            # Includes relay + vultiserver + vcli
+│       └── production/       # Uses api.vultisig.com + vcli
 ├── tests/                    # Test scripts
 └── Makefile
 ```

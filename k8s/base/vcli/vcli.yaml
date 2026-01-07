@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vcli
+  namespace: verifier
+  labels:
+    app: vcli
+spec:
+  restartPolicy: Never
+  containers:
+  - name: vcli
+    image: ghcr.io/vultisig/vcli:latest
+    command: ["sleep", "infinity"]
+    env:
+    # Service URLs (in-cluster)
+    - name: VCLI_VERIFIER_URL
+      value: "http://verifier.verifier.svc.cluster.local:8080"
+    - name: VCLI_DCA_PLUGIN_URL
+      value: "http://dca-server.plugin-dca.svc.cluster.local:8080"
+    - name: VCLI_RELAY_URL
+      valueFrom:
+        configMapKeyRef:
+          name: relay-config
+          key: url
+    # Database (read-only access for queries)
+    - name: VCLI_DATABASE_DSN
+      valueFrom:
+        secretKeyRef:
+          name: postgres
+          key: dsn
+    # Redis
+    - name: VCLI_REDIS_URI
+      valueFrom:
+        secretKeyRef:
+          name: redis
+          key: uri
+    # MinIO
+    - name: VCLI_MINIO_HOST
+      value: "http://minio.infra.svc.cluster.local:9000"
+    - name: VCLI_MINIO_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: minio
+          key: access-key
+    - name: VCLI_MINIO_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: minio
+          key: secret-key
+    # Encryption
+    - name: VCLI_ENCRYPTION_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: encryption
+          key: secret
+    volumeMounts:
+    - name: vault-data
+      mountPath: /vault
+    - name: vcli-home
+      mountPath: /root/.vultisig
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "256Mi"
+        cpu: "500m"
+  volumes:
+  - name: vault-data
+    secret:
+      secretName: test-vault
+      optional: true
+  - name: vcli-home
+    emptyDir: {}

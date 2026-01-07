@@ -26,18 +26,25 @@ type DevConfig struct {
 	AuthExpiresAt  string `json:"auth_expires_at,omitempty"`
 }
 
+func getEnvOrDefault(key, defaultVal string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return defaultVal
+}
+
 func DefaultConfig() *DevConfig {
 	return &DevConfig{
-		Verifier:    "http://localhost:8080",
-		FeePlugin:   "http://localhost:8085",
-		DCAPlugin:   "http://localhost:8082",
-		RelayServer: "https://api.vultisig.com/router",
-		DatabaseDSN: "postgres://vultisig:vultisig@localhost:5432/vultisig-verifier?sslmode=disable",
-		RedisURI:    "redis://:vultisig@localhost:6379",
-		MinioHost:   "http://localhost:9000",
-		MinioAccess: "minioadmin",
-		MinioSecret: "minioadmin",
-		Encryption:  "dev-encryption-secret-32b",
+		Verifier:    getEnvOrDefault("VCLI_VERIFIER_URL", "http://localhost:8080"),
+		FeePlugin:   getEnvOrDefault("VCLI_FEE_PLUGIN_URL", "http://localhost:8085"),
+		DCAPlugin:   getEnvOrDefault("VCLI_DCA_PLUGIN_URL", "http://localhost:8082"),
+		RelayServer: getEnvOrDefault("VCLI_RELAY_URL", "https://api.vultisig.com/router"),
+		DatabaseDSN: getEnvOrDefault("VCLI_DATABASE_DSN", "postgres://vultisig:vultisig@localhost:5432/vultisig-verifier?sslmode=disable"),
+		RedisURI:    getEnvOrDefault("VCLI_REDIS_URI", "redis://:vultisig@localhost:6379"),
+		MinioHost:   getEnvOrDefault("VCLI_MINIO_HOST", "http://localhost:9000"),
+		MinioAccess: getEnvOrDefault("VCLI_MINIO_ACCESS_KEY", "minioadmin"),
+		MinioSecret: getEnvOrDefault("VCLI_MINIO_SECRET_KEY", "minioadmin"),
+		Encryption:  getEnvOrDefault("VCLI_ENCRYPTION_SECRET", "dev-encryption-secret-32b"),
 	}
 }
 

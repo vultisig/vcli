@@ -8,6 +8,7 @@ resources:
   - ../../base
   - ../../base/relay/
   - ../../base/vultiserver/
+  - ../../base/vcli/
   - ingress-local.yaml
 
 # No patches needed - base already uses local cluster DNS endpoints:
