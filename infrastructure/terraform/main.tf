@@ -73,7 +73,7 @@ resource "hcloud_server" "master" {
 
   public_net {
     ipv4_enabled = true
-    ipv6_enabled = true
+    ipv6_enabled = false
   }
 
   network {
@@ -102,7 +102,7 @@ resource "hcloud_server" "workers" {
 
   public_net {
     ipv4_enabled = true
-    ipv6_enabled = true
+    ipv6_enabled = false
   }
 
   network {
