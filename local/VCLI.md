@@ -192,16 +192,85 @@ BLOCK_STORAGE_HOST=http://localhost:9000
 BLOCK_STORAGE_ACCESS_KEY=minioadmin
 ```
 
-### Queue Isolation
+### Queue Isolation (CRITICAL)
 
-The verifier and DCA plugin use **separate task queues** to prevent task stealing:
+The verifier and DCA plugin **MUST use separate task queues**. This is essential for plugin installation (TSS reshare) to work correctly.
 
-| Service | Queue Name | Env Var |
-|---------|-----------|---------|
-| Verifier Worker | `default_queue` | (default) |
-| DCA Worker | `dca_plugin_queue` | `TASK_QUEUE_NAME` |
+#### Why Queue Isolation Matters
 
-If workers share queues, they'll steal each other's tasks and fail.
+During plugin installation, a 4-party TSS reshare occurs:
+1. **vcli** (local CLI)
+2. **Fast Vault Server** (remote)
+3. **Verifier Worker** (listens on `default_queue`)
+4. **DCA Plugin Worker** (listens on `dca_plugin_queue`)
+
+If both workers share the same queue (`default_queue`), **both reshare tasks get picked up by the same worker type**, causing the reshare to fail with only 3 parties instead of 4.
+
+**Symptom of misconfiguration**: During plugin install, you see two workers with the same prefix (e.g., `dca-worker-1234` and `dca-worker-5678`) instead of one verifier and one DCA worker (`verifier-dev-1234` and `dca-worker-5678`).
+
+#### Configuration
+
+| Service | Queue Name | Config Location | Env Var |
+|---------|-----------|-----------------|---------|
+| Verifier Worker | `default_queue` | verifier code (default) | N/A |
+| DCA Server | `dca_plugin_queue` | dca-server.env | `SERVER_TASKQUEUENAME` |
+| DCA Worker | `dca_plugin_queue` | dca-worker.env | `TASK_QUEUE_NAME` |
+
+**Both DCA Server AND DCA Worker must use the same queue name**, and it must be different from the verifier's queue.
+
+#### How It Works
+
+```
+Plugin Install Request
+        │
+        ▼
+┌───────────────────┐     Enqueues to        ┌──────────────────────┐
+│   Verifier API    │ ──────────────────────▶│  default_queue       │
+│ (localhost:8080)  │     default_queue      │  (Redis)             │
+└───────────────────┘                        └──────────┬───────────┘
+        │                                               │
+        │ Forwards to                                   ▼
+        ▼                                    ┌──────────────────────┐
+┌───────────────────┐                        │  Verifier Worker     │
+│   DCA Server      │                        │  Picks up reshare    │
+│ (localhost:8082)  │                        └──────────────────────┘
+└───────────────────┘
+        │
+        │ Enqueues to
+        │ dca_plugin_queue
+        ▼
+┌───────────────────────┐
+│  dca_plugin_queue     │
+│  (Redis)              │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│  DCA Plugin Worker    │
+│  Picks up reshare     │
+└───────────────────────┘
+```
+
+#### Verification
+
+Check Redis queues to verify separation:
+```bash
+# List all asynq queues
+docker exec vultisig-redis redis-cli -a vultisig KEYS "asynq:queues:*"
+
+# Should show both:
+# asynq:queues:default_queue
+# asynq:queues:dca_plugin_queue
+```
+
+Check worker logs during plugin install:
+```bash
+# Verifier worker should show: verifier-dev-XXXX
+grep "party" /tmp/worker.log | tail -5
+
+# DCA worker should show: dca-worker-XXXX
+grep "party" /tmp/dca-worker.log | tail -5
+```
 
 ## Common Gotchas
 
@@ -296,13 +365,44 @@ make local-stop
    docker exec vultisig-redis redis-cli -a vultisig KEYS "asynq:*"
    ```
 
-### TSS Reshare Stuck at 3 Parties
+### TSS Reshare Stuck at 3 Parties / Two Same-Type Workers
 
-The DCA plugin worker isn't processing tasks. Check:
+**Problem**: During plugin install, you see two workers with the same prefix (e.g., two `dca-worker-*` instead of `verifier-dev-*` + `dca-worker-*`).
 
-1. DCA worker is running: `ps aux | grep dca-worker`
-2. Worker connected to correct queue: Check `/tmp/dca-worker.log`
-3. Environment variables correctly named (see envconfig section)
+**Root Cause**: Queue isolation not configured. Both verifier and DCA plugin are using `default_queue`, so the DCA worker picks up both reshare tasks.
+
+**Solution**:
+
+1. **Check DCA Server config** (`local/configs/dca-server.env`):
+   ```bash
+   # MUST be set to a different queue than verifier
+   SERVER_TASKQUEUENAME=dca_plugin_queue
+   ```
+
+2. **Check DCA Worker config** (`local/configs/dca-worker.env`):
+   ```bash
+   # MUST match the server's queue name
+   TASK_QUEUE_NAME=dca_plugin_queue
+   ```
+
+3. **Restart all services** after config changes:
+   ```bash
+   make local-stop && make local-start
+   ```
+
+4. **Verify queue separation** in Redis:
+   ```bash
+   docker exec vultisig-redis redis-cli -a vultisig KEYS "asynq:queues:*"
+   # Should show both: default_queue AND dca_plugin_queue
+   ```
+
+5. **Kill any stale worker processes**:
+   ```bash
+   ps aux | grep "cmd/worker" | grep -v grep
+   # Kill any old processes that shouldn't be running
+   ```
+
+See the "Queue Isolation (CRITICAL)" section above for full details.
 
 ### Policy Creation Fails with "Invalid policy signature"
 
