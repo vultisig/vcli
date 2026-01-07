@@ -1,12 +1,21 @@
 .PHONY: help init plan apply destroy cluster-setup deploy-all deploy-infra deploy-services test clean
+.PHONY: local-build local-start local-stop local-status local-logs
 
 TERRAFORM_DIR := infrastructure/terraform
 KUBECONFIG := $(shell pwd)/.kube/config
+DEVCTL := ./local/devctl
 
 help:
 	@echo "Vultisig Cluster Management"
 	@echo ""
-	@echo "Infrastructure:"
+	@echo "Local Development:"
+	@echo "  local-build       Build devctl CLI"
+	@echo "  local-start       Start all local services"
+	@echo "  local-stop        Stop all local services"
+	@echo "  local-status      Show local service status"
+	@echo "  local-logs        Tail all local logs"
+	@echo ""
+	@echo "Infrastructure (Cloud):"
 	@echo "  init              Initialize Terraform"
 	@echo "  plan              Plan infrastructure changes"
 	@echo "  apply             Provision Hetzner VMs"
@@ -170,3 +179,51 @@ clean:
 	rm -f setup-env.sh
 	rm -rf infrastructure/terraform/.terraform
 	rm -f infrastructure/terraform/terraform.tfstate*
+
+# ============== Local Development ==============
+
+# Extract DYLD_LIBRARY_PATH from cluster.yaml (expand ~ to HOME)
+DYLD_PATH := $(shell grep 'dyld_path:' local/cluster.yaml 2>/dev/null | cut -d: -f2 | tr -d ' ' | sed "s|~|$$HOME|g")
+export DYLD_LIBRARY_PATH := $(DYLD_PATH)
+
+local-build:
+	@echo "Building devctl..."
+	cd local && go build -o devctl ./cmd/devctl
+	@echo "Built: local/devctl"
+
+local-start: local-build
+	@if [ ! -f local/cluster.yaml ]; then \
+		echo "ERROR: local/cluster.yaml not found"; \
+		echo "Copy cluster.yaml.example and configure your paths:"; \
+		echo "  cp local/cluster.yaml.example local/cluster.yaml"; \
+		exit 1; \
+	fi
+	DYLD_LIBRARY_PATH="$(DYLD_PATH)" $(DEVCTL) start
+
+local-stop:
+	@if [ -f $(DEVCTL) ]; then \
+		DYLD_LIBRARY_PATH="$(DYLD_PATH)" $(DEVCTL) stop; \
+	else \
+		echo "devctl not built. Run: make local-build"; \
+	fi
+
+local-status:
+	@if [ -f $(DEVCTL) ]; then \
+		DYLD_LIBRARY_PATH="$(DYLD_PATH)" $(DEVCTL) status; \
+	else \
+		echo "devctl not built. Run: make local-build"; \
+	fi
+
+local-logs:
+	@echo "=== Verifier ===" && tail -20 /tmp/verifier.log 2>/dev/null || echo "(not running)"
+	@echo ""
+	@echo "=== Worker ===" && tail -20 /tmp/worker.log 2>/dev/null || echo "(not running)"
+	@echo ""
+	@echo "=== DCA ===" && tail -20 /tmp/dca.log 2>/dev/null || echo "(not running)"
+	@echo ""
+	@echo "=== DCA Worker ===" && tail -20 /tmp/dca-worker.log 2>/dev/null || echo "(not running)"
+
+local-clean:
+	rm -f local/devctl
+	rm -f local/cluster.yaml
+	docker compose -f local/configs/docker-compose.yaml down -v 2>/dev/null || true

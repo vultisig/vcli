@@ -1,0 +1,58 @@
+# Vultisig Local Development Cluster Configuration
+# Copy this to cluster.yaml and adjust paths for your system
+
+# Repository paths (absolute paths recommended)
+repos:
+  verifier: ~/dev/vultisig/verifier
+  vultiserver: ~/dev/vultisig/vultiserver
+  relay: ~/dev/vultisig/relay
+  dca: ~/dev/vultisig/app-recurring
+  go_wrappers: ~/dev/vultisig/go-wrappers
+
+# Service modes: "local" (run from source) or "production" (use prod endpoints)
+services:
+  # Core infrastructure - always local via Docker
+  postgres: local
+  redis: local
+  minio: local
+
+  # TSS coordination
+  relay: production        # or "local" to run from source
+
+  # Fast Vault (holds user's 2-of-2 share)
+  vultiserver: production  # or "local" to run from source
+
+  # Verifier stack
+  verifier: local
+  verifier_worker: local
+
+  # Plugins
+  dca_server: local
+  dca_worker: local
+  dca_scheduler: local
+  dca_tx_indexer: local
+
+# Production endpoints (used when service mode is "production")
+endpoints:
+  relay: https://api.vultisig.com/router
+  vultiserver: https://api.vultisig.com
+
+# Library paths
+library:
+  # macOS: darwin, Linux: linux
+  dyld_path: ~/dev/vultisig/go-wrappers/includes/darwin
+
+# Ports (for local services)
+ports:
+  verifier: 8080
+  verifier_worker_metrics: 8089
+  dca_server: 8082
+  dca_worker_metrics: 8183
+  dca_scheduler_metrics: 8185
+  dca_tx_indexer_metrics: 8187
+  vultiserver: 8081
+  relay: 8090
+  postgres: 5432
+  redis: 6379
+  minio: 9000
+  minio_console: 9090

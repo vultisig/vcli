@@ -51,12 +51,12 @@ spec:
                 secretKeyRef:
                   name: redis
                   key: password
-            - name: MINIO_ACCESS_KEY
+            - name: BLOCK_STORAGE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: minio
                   key: access-key
-            - name: MINIO_SECRET_KEY
+            - name: BLOCK_STORAGE_SECRET
               valueFrom:
                 secretKeyRef:
                   name: minio
@@ -123,12 +123,12 @@ spec:
                 secretKeyRef:
                   name: redis
                   key: password
-            - name: MINIO_ACCESS_KEY
+            - name: BLOCK_STORAGE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: minio
                   key: access-key
-            - name: MINIO_SECRET_KEY
+            - name: BLOCK_STORAGE_SECRET
               valueFrom:
                 secretKeyRef:
                   name: minio

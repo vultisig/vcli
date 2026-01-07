@@ -42,6 +42,8 @@ spec:
                 secretKeyRef:
                   name: redis
                   key: uri
+            - name: TASK_QUEUE_NAME
+              value: "dca_plugin_queue"
             - name: HEALTHPORT
               value: "8181"
             - name: METRICS_PORT

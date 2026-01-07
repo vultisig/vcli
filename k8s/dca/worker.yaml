@@ -90,6 +90,18 @@ spec:
                 configMapKeyRef:
                   name: verifier-config
                   key: party-prefix
+            - name: VERIFIER_SENDTOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: verifier-tokens
+                  key: send-token
+            - name: VERIFIER_SWAPTOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: verifier-tokens
+                  key: swap-token
+            - name: TASK_QUEUE_NAME
+              value: "dca_plugin_queue"
             # RPC endpoints
             - name: RPC_ETHEREUM_URL
               valueFrom:

@@ -15,6 +15,12 @@ k8s/secrets.yaml
 # Generated
 setup-env.sh
 
+# Local development
+local/devctl
+local/cluster.yaml
+local/test-*.json
+local/configs/docker-compose.yaml
+
 # OS
 .DS_Store
 

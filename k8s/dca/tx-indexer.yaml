@@ -32,16 +32,11 @@ spec:
             - containerPort: 8092
               name: metrics
           env:
-            - name: POSTGRES_DSN
+            - name: BASE_DATABASE_DSN
               valueFrom:
                 secretKeyRef:
                   name: postgres
                   key: dsn
-            - name: REDIS_URI
-              valueFrom:
-                secretKeyRef:
-                  name: redis
-                  key: uri
             - name: BASE_INTERVAL
               value: "30s"
             - name: BASE_ITERATIONTIMEOUT
@@ -54,47 +49,72 @@ spec:
               value: "8183"
             - name: METRICS_PORT
               value: "8092"
-            # RPC endpoints
-            - name: RPC_ETHEREUM_URL
+            # RPC endpoints with BASE_ prefix
+            - name: BASE_RPC_ETHEREUM_URL
               valueFrom:
                 configMapKeyRef:
                   name: rpc-config
                   key: ethereum
-            - name: RPC_ARBITRUM_URL
+            - name: BASE_RPC_ARBITRUM_URL
               valueFrom:
                 configMapKeyRef:
                   name: rpc-config
                   key: arbitrum
-            - name: RPC_AVALANCHE_URL
+            - name: BASE_RPC_AVALANCHE_URL
               valueFrom:
                 configMapKeyRef:
                   name: rpc-config
                   key: avalanche
-            - name: RPC_BSC_URL
+            - name: BASE_RPC_BSC_URL
               valueFrom:
                 configMapKeyRef:
                   name: rpc-config
                   key: bsc
-            - name: RPC_BASE_URL
+            - name: BASE_RPC_BASE_URL
               valueFrom:
                 configMapKeyRef:
                   name: rpc-config
                   key: base
-            - name: RPC_OPTIMISM_URL
+            - name: BASE_RPC_OPTIMISM_URL
               valueFrom:
                 configMapKeyRef:
                   name: rpc-config
                   key: optimism
-            - name: RPC_POLYGON_URL
+            - name: BASE_RPC_POLYGON_URL
               valueFrom:
                 configMapKeyRef:
                   name: rpc-config
                   key: polygon
-            - name: RPC_SOLANA_URL
+            - name: BASE_RPC_SOLANA_URL
               valueFrom:
                 configMapKeyRef:
                   name: rpc-config
                   key: solana
+            - name: BASE_RPC_BITCOIN_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: bitcoin
+            - name: BASE_RPC_LITECOIN_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: litecoin
+            - name: BASE_RPC_DOGECOIN_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: dogecoin
+            - name: BASE_RPC_BITCOINCASH_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: bitcoincash
+            - name: BASE_RPC_XRP_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: xrp
           resources:
             requests:
               memory: "128Mi"
