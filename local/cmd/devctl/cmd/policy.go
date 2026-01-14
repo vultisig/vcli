@@ -122,14 +122,21 @@ Note: Requires authentication. Run 'devctl vault import' first.
 }
 
 func newPolicyDeleteCmd() *cobra.Command {
-	return &cobra.Command{
+	var password string
+
+	cmd := &cobra.Command{
 		Use:   "delete [policy-id]",
 		Short: "Delete a policy",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPolicyDelete(args[0])
+			return runPolicyDelete(args[0], password)
 		},
 	}
+
+	cmd.Flags().StringVar(&password, "password", "", "Vault password for TSS signing")
+	cmd.MarkFlagRequired("password")
+
+	return cmd
 }
 
 func newPolicyInfoCmd() *cobra.Command {
@@ -605,27 +612,140 @@ func min(a, b int) int {
 	return b
 }
 
-func runPolicyDelete(policyID string) error {
+func runPolicyDelete(policyID, password string) error {
+	startTime := time.Now()
+
 	cfg, err := LoadConfig()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	fmt.Printf("Deleting policy %s...\n", policyID)
+	authHeader, err := GetAuthHeader()
+	if err != nil {
+		return fmt.Errorf("authentication required: %w\n\nRun 'devctl vault import' first", err)
+	}
 
-	url := fmt.Sprintf("%s/plugin/policy/%s", cfg.Verifier, policyID)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	vaults, err := ListVaults()
+	if err != nil || len(vaults) == 0 {
+		return fmt.Errorf("no vaults found. Import a vault first")
+	}
+	vault := vaults[0]
+
+	fmt.Printf("Deleting policy %s...\n", policyID)
+	fmt.Printf("  Vault: %s...\n", vault.PublicKeyECDSA[:20])
+
+	// Step 1: Fetch existing policy to get its data
+	fmt.Println("\nFetching policy details...")
+	policyURL := fmt.Sprintf("%s/plugin/policy/%s", cfg.Verifier, policyID)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	req, _ := http.NewRequestWithContext(ctx, "DELETE", url, nil)
-	resp, err := http.DefaultClient.Do(req)
+	fetchReq, err := http.NewRequestWithContext(ctx, "GET", policyURL, nil)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return fmt.Errorf("create fetch request: %w", err)
 	}
-	defer resp.Body.Close()
+	fetchReq.Header.Set("Authorization", authHeader)
 
-	body, _ := io.ReadAll(resp.Body)
-	fmt.Printf("Response (%d): %s\n", resp.StatusCode, string(body))
+	fetchResp, err := http.DefaultClient.Do(fetchReq)
+	if err != nil {
+		return fmt.Errorf("fetch policy failed: %w", err)
+	}
+	defer fetchResp.Body.Close()
+
+	fetchBody, _ := io.ReadAll(fetchResp.Body)
+	if fetchResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("fetch policy failed (%d): %s", fetchResp.StatusCode, string(fetchBody))
+	}
+
+	var policyResp struct {
+		Data struct {
+			Recipe        string `json:"recipe"`
+			PublicKey     string `json:"public_key"`
+			PolicyVersion int    `json:"policy_version"`
+			PluginVersion string `json:"plugin_version"`
+		} `json:"data"`
+	}
+	err = json.Unmarshal(fetchBody, &policyResp)
+	if err != nil {
+		return fmt.Errorf("parse policy response: %w", err)
+	}
+
+	// Step 2: Reconstruct signature message using policy data
+	// Message format: {recipe}*#*{public_key}*#*{policy_version}*#*{plugin_version}
+	signatureMessage := fmt.Sprintf("%s*#*%s*#*%d*#*%s",
+		policyResp.Data.Recipe,
+		policyResp.Data.PublicKey,
+		policyResp.Data.PolicyVersion,
+		policyResp.Data.PluginVersion,
+	)
+
+	fmt.Printf("  Policy Version: %d\n", policyResp.Data.PolicyVersion)
+	fmt.Printf("  Plugin Version: %s\n", policyResp.Data.PluginVersion)
+
+	ethPrefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(signatureMessage), signatureMessage)
+	messageHash := crypto.Keccak256([]byte(ethPrefixedMessage))
+	hexMessage := hex.EncodeToString(messageHash)
+	fmt.Printf("  Message hash: %s\n", hexMessage)
+
+	// Step 3: Sign with TSS keysign
+	fmt.Println("\nSigning deletion with TSS keysign (2-of-2 with Fast Vault Server)...")
+
+	tss := NewTSSService(vault.LocalPartyID)
+	signCtx, signCancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer signCancel()
+
+	derivePath := "m/44'/60'/0'/0/0"
+	results, err := tss.KeysignWithFastVault(signCtx, vault, []string{hexMessage}, derivePath, password)
+	if err != nil {
+		return fmt.Errorf("TSS keysign failed: %w", err)
+	}
+
+	if len(results) == 0 {
+		return fmt.Errorf("no signature result")
+	}
+
+	signature := "0x" + results[0].R + results[0].S + results[0].RecoveryID
+	fmt.Printf("  Signature: %s...\n", signature[:20])
+
+	// Step 4: Send DELETE request with signature
+	fmt.Println("\nDeleting policy...")
+
+	deleteBody := map[string]string{
+		"signature": signature,
+	}
+	deleteJSON, err := json.Marshal(deleteBody)
+	if err != nil {
+		return fmt.Errorf("marshal delete body: %w", err)
+	}
+
+	deleteReq, err := http.NewRequestWithContext(ctx, "DELETE", policyURL, bytes.NewReader(deleteJSON))
+	if err != nil {
+		return fmt.Errorf("create delete request: %w", err)
+	}
+	deleteReq.Header.Set("Content-Type", "application/json")
+	deleteReq.Header.Set("Authorization", authHeader)
+
+	deleteResp, err := http.DefaultClient.Do(deleteReq)
+	if err != nil {
+		return fmt.Errorf("delete request failed: %w", err)
+	}
+	defer deleteResp.Body.Close()
+
+	deleteRespBody, _ := io.ReadAll(deleteResp.Body)
+
+	if deleteResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("delete policy failed (%d): %s", deleteResp.StatusCode, string(deleteRespBody))
+	}
+
+	totalDuration := time.Since(startTime)
+
+	fmt.Println()
+	fmt.Println("┌─────────────────────────────────────────────────────────────────┐")
+	fmt.Println("│ POLICY DELETED SUCCESSFULLY                                     │")
+	fmt.Println("├─────────────────────────────────────────────────────────────────┤")
+	fmt.Printf("│  Policy ID: %-52s │\n", policyID)
+	fmt.Printf("│  Duration:  %-52s │\n", totalDuration.Round(time.Millisecond))
+	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 
 	return nil
 }
@@ -636,13 +756,23 @@ func runPolicyInfo(policyID string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	authHeader, err := GetAuthHeader()
+	if err != nil {
+		return fmt.Errorf("authentication required: %w\n\nRun 'devctl vault import' first", err)
+	}
+
 	fmt.Printf("Fetching policy %s...\n\n", policyID)
 
 	url := fmt.Sprintf("%s/plugin/policy/%s", cfg.Verifier, policyID)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader)
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)

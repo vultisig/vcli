@@ -199,9 +199,12 @@ The verifier and DCA plugin use **separate task queues** to prevent task stealin
 | Service | Queue Name | Env Var |
 |---------|-----------|---------|
 | Verifier Worker | `default_queue` | (default) |
+| DCA Server | `dca_plugin_queue` | `SERVER_TASKQUEUENAME` |
 | DCA Worker | `dca_plugin_queue` | `TASK_QUEUE_NAME` |
 
-If workers share queues, they'll steal each other's tasks and fail.
+**Critical**: Both DCA Server and DCA Worker must use the same queue name. The server enqueues tasks, the worker consumes them. If they don't match, tasks will be orphaned.
+
+If verifier and DCA workers share queues, they'll steal each other's tasks and the 4-party reshare will fail (only 3 parties will join).
 
 ## Common Gotchas
 
@@ -298,11 +301,30 @@ make local-stop
 
 ### TSS Reshare Stuck at 3 Parties
 
-The DCA plugin worker isn't processing tasks. Check:
+The DCA plugin worker isn't processing tasks. This happens when:
+- Queue mismatch: DCA server enqueues to one queue, worker listens on another
+- Task stealing: Both verifier and DCA workers listen on the same queue
 
-1. DCA worker is running: `ps aux | grep dca-worker`
-2. Worker connected to correct queue: Check `/tmp/dca-worker.log`
-3. Environment variables correctly named (see envconfig section)
+**Diagnosis:**
+```bash
+# Check Redis queues - should see both default_queue and dca_plugin_queue
+docker exec vultisig-redis redis-cli -a vultisig KEYS "asynq:*queue*"
+
+# Check if task is pending in DCA queue
+docker exec vultisig-redis redis-cli -a vultisig LRANGE "asynq:{dca_plugin_queue}:pending" 0 -1
+
+# Check DCA worker is consuming from correct queue
+grep "queue" /tmp/dca-worker.log
+```
+
+**Fix:** Ensure queue names match:
+```bash
+# dca-server.env
+SERVER_TASKQUEUENAME=dca_plugin_queue
+
+# dca-worker.env
+TASK_QUEUE_NAME=dca_plugin_queue
+```
 
 ### Policy Creation Fails with "Invalid policy signature"
 

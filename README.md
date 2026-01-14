@@ -123,6 +123,20 @@ The `vcli` tool manages vaults, plugins, and policies for local testing:
 
 See [local/VCLI.md](local/VCLI.md) for detailed usage.
 
+### Queue Isolation (4-Party TSS)
+
+When installing a plugin, a 4-party TSS reshare occurs:
+- **CLI** (vcli)
+- **Fast Vault Server** (production)
+- **Verifier Worker** (listens on `default_queue`)
+- **DCA Plugin Worker** (listens on `dca_plugin_queue`)
+
+The workers use separate task queues to prevent task stealing. This is configured in:
+- `local/configs/dca-server.env`: `SERVER_TASKQUEUENAME=dca_plugin_queue`
+- `local/configs/dca-worker.env`: `TASK_QUEUE_NAME=dca_plugin_queue`
+
+See [local/queue-fix-doc.md](local/queue-fix-doc.md) for technical details.
+
 ### Local Commands
 
 ```bash
