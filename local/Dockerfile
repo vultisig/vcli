@@ -19,7 +19,7 @@ RUN go mod download
 COPY cmd/ cmd/
 
 # Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o vcli ./cmd/devctl
+RUN CGO_ENABLED=0 GOOS=linux go build -o vcli ./cmd/vcli
 
 # Runtime stage
 FROM alpine:3.19
