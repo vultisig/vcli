@@ -16,14 +16,19 @@ k8s/secrets.yaml
 setup-env.sh
 
 # Local development
-local/devctl
 local/vcli
 local/cluster.yaml
 local/vault.env
 local/configs/vault.env
-local/test-*.json
 local/configs/docker-compose.yaml
+
+# Vault keyshare files (sensitive - never commit)
+*.vult
+local/*.vult
 local/configs/*.vult
+
+# Root-level test files (generated)
+/test-*.json
 
 # OS
 .DS_Store
@@ -31,5 +36,3 @@ local/configs/*.vult
 # IDE
 .idea/
 .vscode/
-# Test vault files
-local/configs/*.vult

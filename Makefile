@@ -10,7 +10,7 @@ help:
 	@echo "Vultisig Cluster Management"
 	@echo ""
 	@echo "Local Development:"
-	@echo "  local-build       Build devctl CLI"
+	@echo "  local-build       Build vcli"
 	@echo "  local-start       Start all local services"
 	@echo "  local-stop        Stop all local services"
 	@echo "  local-status      Show local service status"
@@ -221,7 +221,7 @@ clean:
 
 local-build:
 	@echo "Building vcli..."
-	cd local && go build -o vcli ./cmd/devctl
+	cd local && go build -o vcli ./cmd/vcli
 	@echo "Built: local/vcli"
 	@echo "Use ./local/vcli.sh (wrapper) or make local-* commands"
 
