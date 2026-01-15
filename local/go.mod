@@ -11,7 +11,7 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/vultisig/commondata v0.0.0-20251125054425-71e1e8231dd3
 	github.com/vultisig/recipes v0.0.0-20260115051142-a8b9e35c9b76
-	github.com/vultisig/verifier v0.0.0
+	github.com/vultisig/verifier v0.0.0-20260115051207-a49a4cc3c068
 	github.com/vultisig/vultiserver v0.0.0-20250825042420-c6e6ac281110
 	github.com/vultisig/vultisig-go v0.0.0-20260114092710-6c38516a0c85
 	golang.org/x/term v0.34.0
