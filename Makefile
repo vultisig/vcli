@@ -233,8 +233,7 @@ build:
 start: build
 	@if [ ! -f local/cluster.yaml ]; then \
 		echo "ERROR: local/cluster.yaml not found"; \
-		echo "Copy cluster.yaml.example and configure your paths:"; \
-		echo "  cp local/cluster.yaml.example local/cluster.yaml"; \
+		echo "This file should exist in the repo. Try: git checkout local/cluster.yaml"; \
 		exit 1; \
 	fi
 	$(VCLI) start --mode $(or $(MODE),dev)

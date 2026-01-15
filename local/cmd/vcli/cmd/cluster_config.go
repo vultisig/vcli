@@ -85,7 +85,7 @@ func LoadClusterConfig() (*ClusterConfig, error) {
 	}
 
 	if configPath == "" {
-		return nil, fmt.Errorf("cluster.yaml not found. Copy cluster.yaml.example to cluster.yaml and configure paths")
+		return nil, fmt.Errorf("cluster.yaml not found in current directory, local/, or ~/.vultisig/")
 	}
 
 	data, err := os.ReadFile(configPath)

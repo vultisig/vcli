@@ -80,13 +80,11 @@ You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig m
 ```bash
 cd vultisig-cluster
 
-# 1. Configure paths to your local repos
-cp local/cluster.yaml.example local/cluster.yaml
-# Edit cluster.yaml with your repo paths
-
-# 2. Configure vault credentials
+# 1. Configure vault credentials
 cp local/vault.env.example local/vault.env
 # Edit vault.env with your vault file path and password
+
+# 2. (Optional) Edit local/cluster.yaml if your repos are in different locations
 ```
 
 ---
@@ -450,7 +448,7 @@ vultisig-cluster/
 │   │   ├── policies/         # Policy JSON templates
 │   │   ├── *.env             # Service environment files
 │   │   └── docker-compose.yaml
-│   ├── cluster.yaml.example  # Config template
+│   ├── cluster.yaml          # Cluster configuration
 │   ├── vault.env.example     # Vault config template
 │   └── Dockerfile            # vcli container image
 └── Makefile

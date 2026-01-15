@@ -1,11 +1,10 @@
 # Vultisig Local Development Cluster Configuration
-# Copy this to cluster.yaml and adjust paths for your system
 
 # Repository paths (absolute paths recommended)
 repos:
   verifier: ~/dev/vultisig/verifier
   vultiserver: ~/dev/vultisig/vultiserver
-  relay: ~/dev/vultisig/relay
+  relay: ~/dev/vultisig/vultisig-relay
   dca: ~/dev/vultisig/app-recurring
   go_wrappers: ~/dev/vultisig/go-wrappers
 
@@ -17,10 +16,10 @@ services:
   minio: local
 
   # TSS coordination
-  relay: production        # or "local" to run from source
+  relay: production        # Use production relay
 
   # Fast Vault (holds user's 2-of-2 share)
-  vultiserver: production  # or "local" to run from source
+  vultiserver: production  # Use production vultiserver
 
   # Verifier stack
   verifier: local

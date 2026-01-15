@@ -18,7 +18,6 @@ setup-env.sh
 # Local development
 local/vcli
 local/devctl
-local/cluster.yaml
 local/vault.env
 local/configs/vault.env
 

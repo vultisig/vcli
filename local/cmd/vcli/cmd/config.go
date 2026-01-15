@@ -166,12 +166,15 @@ type Asset struct {
 // AssetAliases maps short asset names to their chain and token address
 var AssetAliases = map[string]Asset{
 	// Native tokens (token = "" means native)
-	"eth":  {Chain: "Ethereum", Token: ""},
-	"btc":  {Chain: "Bitcoin", Token: ""},
-	"sol":  {Chain: "Solana", Token: ""},
-	"rune": {Chain: "THORChain", Token: ""},
-	"bnb":  {Chain: "BSC", Token: ""},
-	"avax": {Chain: "Avalanche", Token: ""},
+	"eth":   {Chain: "Ethereum", Token: ""},
+	"btc":   {Chain: "Bitcoin", Token: ""},
+	"ltc":   {Chain: "Litecoin", Token: ""},
+	"bch":   {Chain: "BitcoinCash", Token: ""},
+	"doge":  {Chain: "Dogecoin", Token: ""},
+	"sol":   {Chain: "Solana", Token: ""},
+	"rune":  {Chain: "THORChain", Token: ""},
+	"bnb":   {Chain: "BSC", Token: ""},
+	"avax":  {Chain: "Avalanche", Token: ""},
 	"matic": {Chain: "Polygon", Token: ""},
 
 	// Stablecoins (Ethereum mainnet)
