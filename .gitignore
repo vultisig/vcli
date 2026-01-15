@@ -23,8 +23,7 @@ local/configs/vault.env
 
 # Vault keyshare files (sensitive - never commit)
 *.vult
-local/*.vult
-local/configs/*.vult
+!local/keyshares/.gitkeep
 
 # Root-level test files (generated)
 /test-*.json

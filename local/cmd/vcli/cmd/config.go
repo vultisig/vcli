@@ -169,7 +169,7 @@ var AssetAliases = map[string]Asset{
 	"eth":   {Chain: "Ethereum", Token: ""},
 	"btc":   {Chain: "Bitcoin", Token: ""},
 	"ltc":   {Chain: "Litecoin", Token: ""},
-	"bch":   {Chain: "BitcoinCash", Token: ""},
+	"bch":   {Chain: "Bitcoin-Cash", Token: ""},
 	"doge":  {Chain: "Dogecoin", Token: ""},
 	"sol":   {Chain: "Solana", Token: ""},
 	"rune":  {Chain: "THORChain", Token: ""},

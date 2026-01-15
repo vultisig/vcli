@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -202,14 +203,17 @@ or you can provide it with --password (be careful with special characters in she
 
 Importing always overwrites any existing vault.
 
+DEFAULT LOCATION:
+  If no --file is specified, looks for a .vult file in local/keyshares/
+  Put your vault backup there for easy importing.
+
 Environment variables (override flags):
   VAULT_PATH      - Path to vault file
   VAULT_PASSWORD  - Decryption password
 
 Example:
-  vcli vault import --file ~/Downloads/MyVault.vult
+  vcli vault import --password "your-password"                    # Uses file from local/keyshares/
   vcli vault import --file ~/Downloads/MyVault.vult --password "your-password"
-  VAULT_PATH=/path/to/vault.vult VAULT_PASSWORD=secret vcli vault import
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actualFile := file
@@ -217,7 +221,14 @@ Example:
 				actualFile = envPath
 			}
 			if actualFile == "" {
-				return fmt.Errorf("vault file required: use --file or set VAULT_PATH")
+				var err error
+				actualFile, err = findVaultInKeyshares()
+				if err != nil {
+					return err
+				}
+			}
+			if actualFile == "" {
+				return fmt.Errorf("no vault file found. Put a .vult file in local/keyshares/ or use --file")
 			}
 
 			actualPassword := password
@@ -235,10 +246,51 @@ Example:
 		},
 	}
 
-	cmd.Flags().StringVar(&file, "file", "", "Vault file to import (or set VAULT_PATH env var)")
+	cmd.Flags().StringVar(&file, "file", "", "Vault file (default: looks in local/keyshares/)")
 	cmd.Flags().StringVar(&password, "password", "", "Decryption password (or set VAULT_PASSWORD env var)")
 
 	return cmd
+}
+
+func findVaultInKeyshares() (string, error) {
+	paths := []string{
+		"local/keyshares",
+		"keyshares",
+	}
+
+	var vaultFiles []string
+	var searchDir string
+
+	for _, dir := range paths {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		searchDir = dir
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".vult") {
+				vaultFiles = append(vaultFiles, filepath.Join(dir, entry.Name()))
+			}
+		}
+		if len(vaultFiles) > 0 {
+			break
+		}
+	}
+
+	if len(vaultFiles) == 0 {
+		return "", nil
+	}
+
+	if len(vaultFiles) == 1 {
+		return vaultFiles[0], nil
+	}
+
+	// Multiple files - list them and ask user to specify
+	fmt.Printf("Multiple vault files found in %s/:\n", searchDir)
+	for _, f := range vaultFiles {
+		fmt.Printf("  - %s\n", filepath.Base(f))
+	}
+	return "", fmt.Errorf("multiple vault files found. Use --file to specify which one")
 }
 
 func newVaultExportCmd() *cobra.Command {

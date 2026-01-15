@@ -72,17 +72,15 @@ You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig m
 
 1. Create a vault in the Vultisig mobile app with "Fast Vault" enabled
 2. Export the vault backup (Settings -> Export -> Backup file)
-3. Transfer the `.vult` file to your development machine
-4. Configure the path in `local/vault.env`
+3. Transfer the `.vult` file to `local/keyshares/` directory
 
 ## Initial Setup (One-Time)
 
 ```bash
 cd vultisig-cluster
 
-# 1. Configure vault credentials
-cp local/vault.env.example local/vault.env
-# Edit vault.env with your vault file path and password
+# 1. Put your vault file in the keyshares directory
+cp ~/Downloads/MyVault.vult local/keyshares/
 
 # 2. (Optional) Edit local/cluster.yaml if your repos are in different locations
 ```
@@ -134,6 +132,10 @@ make status
 Import your vault into the local environment.
 
 ```bash
+# If vault is in local/keyshares/ (recommended):
+./local/vcli.sh vault import --password "password"
+
+# Or specify a file explicitly:
 ./local/vcli.sh vault import --file /path/to/vault.vult --password "password"
 ```
 
@@ -147,7 +149,7 @@ Import your vault into the local environment.
 - `vault list` shows your imported vault
 - `report` displays vault name, public keys (ECDSA/EdDSA), and signers
 
-❌ **If validation fails:** Verify your `.vult` file path and password. The vault must be a Fast Vault.
+❌ **If validation fails:** Verify your `.vult` file is in `local/keyshares/` and password is correct. The vault must be a Fast Vault.
 
 ---
 
@@ -376,8 +378,8 @@ The mode flag overrides `cluster.yaml` service settings at runtime.
 ## vcli Commands Reference
 
 ```bash
-# Vault management
-./local/vcli.sh vault import --file /path/to/vault.vult --password "password"
+# Vault management (put .vult file in local/keyshares/ first)
+./local/vcli.sh vault import --password "password"
 ./local/vcli.sh vault list
 
 # Plugin management
@@ -444,12 +446,12 @@ vultisig-cluster/
 │   ├── cmd/vcli/             # vcli source code
 │   ├── scripts/              # Shell scripts (vcli.sh, tests)
 │   ├── docs/                 # Documentation (VCLI.md)
+│   ├── keyshares/            # Put your .vult files here
 │   ├── configs/
 │   │   ├── policies/         # Policy JSON templates
 │   │   ├── *.env             # Service environment files
 │   │   └── docker-compose.yaml
 │   ├── cluster.yaml          # Cluster configuration
-│   ├── vault.env.example     # Vault config template
 │   └── Dockerfile            # vcli container image
 └── Makefile
 ```
