@@ -181,6 +181,42 @@ func (c *ClusterConfig) GetDYLDPath() string {
 	return c.Library.DYLDPath
 }
 
+// ApplyMode overrides service settings based on mode:
+// - local: all services run locally
+// - dev: relay and vultiserver use production, rest local
+// - prod: all services use production endpoints
+func (c *ClusterConfig) ApplyMode(mode string) {
+	switch mode {
+	case "local":
+		c.Services.Relay = "local"
+		c.Services.Vultiserver = "local"
+		c.Services.Verifier = "local"
+		c.Services.VerifierWorker = "local"
+		c.Services.DCAServer = "local"
+		c.Services.DCAWorker = "local"
+		c.Services.DCAScheduler = "local"
+		c.Services.DCATxIndexer = "local"
+	case "dev":
+		c.Services.Relay = "production"
+		c.Services.Vultiserver = "production"
+		c.Services.Verifier = "local"
+		c.Services.VerifierWorker = "local"
+		c.Services.DCAServer = "local"
+		c.Services.DCAWorker = "local"
+		c.Services.DCAScheduler = "local"
+		c.Services.DCATxIndexer = "local"
+	case "prod":
+		c.Services.Relay = "production"
+		c.Services.Vultiserver = "production"
+		c.Services.Verifier = "production"
+		c.Services.VerifierWorker = "production"
+		c.Services.DCAServer = "production"
+		c.Services.DCAWorker = "production"
+		c.Services.DCAScheduler = "production"
+		c.Services.DCATxIndexer = "production"
+	}
+}
+
 func (c *ClusterConfig) ValidateRepos() error {
 	repos := map[string]string{
 		"verifier":   c.Repos.Verifier,

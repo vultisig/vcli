@@ -22,7 +22,7 @@ The bracketed steps (policy testing) can be repeated. Everything else runs once 
 - Skip steps (except repeating the policy loop)
 - Re-use state from a previous failed run
 
-**If something fails:** Run `make local-stop` (cleans all state) and start fresh from Step 1.
+**If something fails:** Run `make stop` (cleans all state) and start fresh from Step 1.
 
 ---
 
@@ -100,12 +100,26 @@ Follow these steps **in order, every time**. Do not skip steps.
 Start all services (infrastructure + application services).
 
 ```bash
-make local-start
+make start
 ```
+
+**Service Modes:**
+```bash
+make start              # Default: dev mode (recommended)
+make start MODE=local   # All services run locally
+make start MODE=dev     # Relay+Vultiserver production, rest local (DEFAULT)
+make start MODE=prod    # All services use production endpoints
+```
+
+| Mode | Relay | Vultiserver | Verifier | Plugins |
+|------|-------|-------------|----------|---------|
+| local | localhost | localhost | localhost | localhost |
+| dev (default) | api.vultisig.com | api.vultisig.com | localhost | localhost |
+| prod | api.vultisig.com | api.vultisig.com | production | production |
 
 **Validation:**
 ```bash
-make local-status
+make status
 ```
 
 ✅ **Expected:** All services show as "running":
@@ -113,7 +127,7 @@ make local-status
 - Verifier API, Verifier Worker (verifier stack)
 - DCA Server, DCA Worker, DCA Scheduler (plugin stack)
 
-❌ **If validation fails:** Check logs with `make local-logs`. Fix the issue and restart with `make local-stop && make local-start`.
+❌ **If validation fails:** Check logs with `make logs`. Fix the issue and restart with `make stop && make start`.
 
 ---
 
@@ -122,7 +136,7 @@ make local-status
 Import your vault into the local environment.
 
 ```bash
-./local/vcli.sh vault import -f /path/to/vault.vult -p "password"
+./local/vcli.sh vault import --file /path/to/vault.vult --password "password"
 ```
 
 **Validation:**
@@ -144,7 +158,7 @@ Import your vault into the local environment.
 Install a plugin. This performs a 4-party TSS reshare.
 
 ```bash
-./local/vcli.sh plugin install vultisig-dca-0000 -p "password"
+./local/vcli.sh plugin install vultisig-dca-0000 --password "password"
 ```
 
 **What happens:** A 4-party reshare occurs between:
@@ -163,7 +177,7 @@ Install a plugin. This performs a 4-party TSS reshare.
 - Report shows keyshare files stored in MinIO (4 parties)
 - Signers list now includes verifier and plugin parties
 
-❌ **If validation fails:** Check that both workers are running (`make local-status`). Check logs for TSS errors. **Do not attempt to fix manually** - run `make local-stop && make local-start` and restart from Step 1.
+❌ **If validation fails:** Check that both workers are running (`make status`). Check logs for TSS errors. **Do not attempt to fix manually** - run `make stop && make start` and restart from Step 1.
 
 ---
 
@@ -232,12 +246,12 @@ cat my-policy.json | python3 -m json.tool > /dev/null && echo "Valid JSON"
 Add the policy to the installed plugin.
 
 ```bash
-./local/vcli.sh policy add --plugin vultisig-dca-0000 -c my-policy.json --password "password"
+./local/vcli.sh policy add --plugin vultisig-dca-0000 --policy-file my-policy.json --password "password"
 ```
 
 **Validation:**
 ```bash
-./local/vcli.sh policy list -p vultisig-dca-0000
+./local/vcli.sh policy list --plugin vultisig-dca-0000
 ```
 
 ✅ **Expected:** Your policy appears in the list with a policy ID.
@@ -255,7 +269,7 @@ Monitor the policy execution.
 ./local/vcli.sh policy status <policy-id>
 
 # Watch logs in real-time
-make local-logs
+make logs
 
 # Or watch specific service logs
 tail -f /tmp/dca-worker.log
@@ -283,7 +297,7 @@ Delete the policy.
 
 **Validation:**
 ```bash
-./local/vcli.sh policy list -p vultisig-dca-0000
+./local/vcli.sh policy list --plugin vultisig-dca-0000
 ```
 
 ✅ **Expected:** The deleted policy no longer appears in the list.
@@ -313,15 +327,15 @@ Uninstall the plugin.
 
 ### Step 9: STOP
 
-Stop all services.
+Stop all services and clean all state (vaults, logs, docker volumes).
 
 ```bash
-make local-stop
+make stop
 ```
 
 **Validation:**
 ```bash
-make local-status
+make status
 ```
 
 ✅ **Expected:** All services show as stopped or not running.
@@ -338,39 +352,44 @@ make local-status
 | Skipping UNINSTALL | Leaves orphaned keyshares that conflict with future installs |
 | Re-using failed state | Corrupted state propagates; always clean start |
 
-**The only recovery from a failed test is:** `make local-stop` then start fresh from Step 1.
+**The only recovery from a failed test is:** `make stop` then start fresh from Step 1.
 
 ---
 
 ## Service Modes
 
-In `local/cluster.yaml`, each service can be `local` or `production`:
+Use `--mode` flag when starting services (or override with `cluster.yaml`):
 
-```yaml
-services:
-  relay: production      # Use api.vultisig.com/router
-  vultiserver: production  # Use api.vultisig.com
-  verifier: local        # Run from source
-  dca_server: local      # Run from source
+```bash
+make start              # Default: dev mode
+make start MODE=local   # All local
+make start MODE=dev     # Relay+Vultiserver production, rest local
+make start MODE=prod    # All production
 ```
 
-This lets you test local changes against production relay/vultiserver, or run everything locally.
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **local** | All services run from source | Testing relay/vultiserver changes |
+| **dev** | Relay+Vultiserver use production, rest local | **Recommended for plugin development** |
+| **prod** | All services use production endpoints | Integration testing against live |
+
+The mode flag overrides `cluster.yaml` service settings at runtime.
 
 ## vcli Commands Reference
 
 ```bash
 # Vault management
-./local/vcli.sh vault import -f /path/to/vault.vult -p "password"
+./local/vcli.sh vault import --file /path/to/vault.vult --password "password"
 ./local/vcli.sh vault list
 
 # Plugin management
 ./local/vcli.sh plugin list
-./local/vcli.sh plugin install <plugin-id> -p "password"
+./local/vcli.sh plugin install <plugin-id> --password "password"
 ./local/vcli.sh plugin uninstall <plugin-id>
 
 # Policy management
-./local/vcli.sh policy add --plugin <plugin-id> -c <config.json> --password "password"
-./local/vcli.sh policy list -p <plugin-id>
+./local/vcli.sh policy add --plugin <plugin-id> --policy-file <config.json> --password "password"
+./local/vcli.sh policy list --plugin <plugin-id>
 ./local/vcli.sh policy delete <policy-id> --password "password"
 ./local/vcli.sh policy status <policy-id>
 
@@ -409,11 +428,14 @@ The workers use separate task queues to prevent task stealing. This is configure
 ## Make Commands
 
 ```bash
-make local-build    # Build vcli
-make local-start    # Build and start all services
-make local-stop     # Stop all services and clean all state
-make local-status   # Show service status
-make local-logs     # Tail all logs
+make build                  # Build vcli
+make start                  # Start services (default: dev mode)
+make start MODE=local       # Start all services locally
+make start MODE=dev         # Relay+Vultiserver production, rest local
+make start MODE=prod        # All production endpoints
+make stop                   # Stop all services and clean all state
+make status                 # Show service status
+make logs                   # Tail all logs
 ```
 
 ## Directory Structure
@@ -449,7 +471,7 @@ dyld: Library not loaded: libgodkls.dylib
 ```bash
 lsof -i :5432   # Check PostgreSQL
 lsof -i :8080   # Check Verifier
-make local-stop # Force stop everything
+make stop       # Force stop everything
 ```
 
 ### TSS Reshare Stuck at 3 Parties

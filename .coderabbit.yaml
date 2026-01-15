@@ -1,0 +1,25 @@
+language: en-US
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  path_filters:
+    - "!**/*.md"
+    - "!**/*.lock"
+  path_instructions:
+    - path: "local/**/*.go"
+      instructions: |
+        Review Go code following these conventions:
+        - Do not use `if err := fn(); err != nil {}` style. Instead, define variable and then `if` statement on next line
+        - Avoid adding comments to code, allowed only to super-tricky parts of the code
+        - Avoid variable names shadow in closures
+    - path: "k8s/**"
+      instructions: |
+        Review Kubernetes manifests for:
+        - Resource limits and requests
+        - Security contexts
+        - Proper labeling
+chat:
+  auto_reply: true

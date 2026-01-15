@@ -41,7 +41,7 @@ This performs a TSS keysign with the Fast Vault Server to create an
 EIP-191 personal_sign signature, which is then used to obtain a JWT token.
 
 Environment variables:
-  VAULT_PASSWORD  - Fast Vault password (or use -p flag)
+  VAULT_PASSWORD  - Fast Vault password (or use --password flag)
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actualPassword := password
@@ -53,7 +53,7 @@ Environment variables:
 	}
 
 	cmd.Flags().StringVarP(&vaultID, "vault", "v", "", "Vault ID or public key prefix")
-	cmd.Flags().StringVarP(&password, "password", "p", "", "Fast Vault password (or set VAULT_PASSWORD)")
+	cmd.Flags().StringVar(&password, "password", "", "Fast Vault password (or set VAULT_PASSWORD)")
 
 	return cmd
 }

@@ -24,11 +24,17 @@ const (
 
 func NewStartCmd() *cobra.Command {
 	var skipDCA bool
+	var mode string
 
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start all local development services",
 		Long: `Start all local development services (stops existing first).
+
+MODES:
+  --mode local  All services run locally (relay, vultiserver, verifier, plugins)
+  --mode dev    Relay + Vultiserver use production endpoints, rest local (DEFAULT)
+  --mode prod   All services use production endpoints
 
 This command reads cluster.yaml to determine:
 - Which repos to use (paths configured per developer)
@@ -47,16 +53,17 @@ Services started:
 All services run in the background with logs in /tmp/*.log
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStart(skipDCA)
+			return runStart(skipDCA, mode)
 		},
 	}
 
 	cmd.Flags().BoolVar(&skipDCA, "skip-dca", false, "Skip starting DCA plugin services")
+	cmd.Flags().StringVar(&mode, "mode", "dev", "Service mode: local, dev (default), prod")
 
 	return cmd
 }
 
-func runStart(skipDCA bool) error {
+func runStart(skipDCA bool, mode string) error {
 	startTime := time.Now()
 
 	fmt.Println("============================================")
@@ -68,6 +75,10 @@ func runStart(skipDCA bool) error {
 	if err != nil {
 		return fmt.Errorf("load cluster config: %w", err)
 	}
+
+	// Apply mode to override service settings
+	config.ApplyMode(mode)
+	fmt.Printf("Mode: %s\n", mode)
 
 	err = config.ValidateRepos()
 	if err != nil {
@@ -434,8 +445,8 @@ func printStartupSummary(elapsed time.Duration, skipDCA bool, config *ClusterCon
 	fmt.Printf("%sReady for vault import!%s\n", colorGreen, colorReset)
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Println("  vcli vault import -f <vault.vult> -p <password>")
-	fmt.Println("  vcli plugin install <plugin-id> -p <password>")
+	fmt.Println("  vcli vault import --file <vault.vult> --password <password>")
+	fmt.Println("  vcli plugin install <plugin-id> --password <password>")
 	fmt.Println()
 }
 

@@ -101,7 +101,7 @@ Example for DCA plugin (swap ETH to USDC):
 }
 
 Environment variables:
-  VAULT_PASSWORD  - Fast Vault password (or use -p flag)
+  VAULT_PASSWORD  - Fast Vault password (or use --password flag)
 
 Note: Requires authentication. Run 'vcli vault import' first.
 `,
@@ -122,10 +122,10 @@ Note: Requires authentication. Run 'vcli vault import' first.
 	}
 
 	cmd.Flags().StringVar(&pluginID, "plugin", "", "Plugin ID or alias (required)")
-	cmd.Flags().StringVarP(&configFile, "config", "c", "", "Policy configuration file (required)")
-	cmd.Flags().StringVarP(&password, "password", "p", "", "Fast Vault password (or set VAULT_PASSWORD env var)")
+	cmd.Flags().StringVar(&configFile, "policy-file", "", "Policy configuration JSON file (required)")
+	cmd.Flags().StringVar(&password, "password", "", "Fast Vault password (or set VAULT_PASSWORD env var)")
 	cmd.MarkFlagRequired("plugin")
-	cmd.MarkFlagRequired("config")
+	cmd.MarkFlagRequired("policy-file")
 
 	return cmd
 }
@@ -139,7 +139,7 @@ func newPolicyDeleteCmd() *cobra.Command {
 		Long: `Delete a policy by ID.
 
 Environment variables:
-  VAULT_PASSWORD  - Fast Vault password (or use -p flag)
+  VAULT_PASSWORD  - Fast Vault password (or use --password flag)
 `,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -148,13 +148,13 @@ Environment variables:
 				actualPassword = envPass
 			}
 			if actualPassword == "" {
-				return fmt.Errorf("password required: use -p or set VAULT_PASSWORD")
+				return fmt.Errorf("password required: use --password or set VAULT_PASSWORD")
 			}
 			return runPolicyDelete(args[0], actualPassword)
 		},
 	}
 
-	cmd.Flags().StringVarP(&password, "password", "p", "", "Vault password for TSS signing (or set VAULT_PASSWORD)")
+	cmd.Flags().StringVar(&password, "password", "", "Vault password for TSS signing (or set VAULT_PASSWORD)")
 
 	return cmd
 }

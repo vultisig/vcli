@@ -96,11 +96,11 @@ Plugin ID can be an alias (dca, fee, sends) or full ID.
 Run 'vcli plugin aliases' to see available aliases.
 
 Environment variables:
-  VAULT_PASSWORD  - Fast Vault password (or use -p flag)
+  VAULT_PASSWORD  - Fast Vault password (or use --password flag)
 
 Example:
-  vcli vault reshare --plugin dca -p "your-password"
-  vcli vault reshare --plugin vultisig-fees-feee -p "your-password"
+  vcli vault reshare --plugin dca --password "your-password"
+  vcli vault reshare --plugin vultisig-fees-feee --password "your-password"
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actualPassword := password
@@ -113,7 +113,7 @@ Example:
 
 	cmd.Flags().StringVar(&pluginID, "plugin", "", "Plugin ID or alias (required)")
 	cmd.Flags().StringVarP(&verifierURL, "verifier", "v", "http://localhost:8080", "Verifier server URL")
-	cmd.Flags().StringVarP(&password, "password", "p", "", "Fast Vault password (or set VAULT_PASSWORD)")
+	cmd.Flags().StringVar(&password, "password", "", "Fast Vault password (or set VAULT_PASSWORD)")
 	cmd.MarkFlagRequired("plugin")
 
 	return cmd
@@ -137,14 +137,14 @@ For ECDSA signing (default), provide a derive path like "m/44'/60'/0'/0/0" for E
 For EdDSA signing, use --eddsa flag (no derive path needed).
 
 Environment variables:
-  VAULT_PASSWORD  - Fast Vault password (or use -p flag)
+  VAULT_PASSWORD  - Fast Vault password (or use --password flag)
 
 Example:
   # Sign an Ethereum transaction hash (ECDSA)
-  vcli vault keysign --message "abcd1234..." --derive "m/44'/60'/0'/0/0" -p "vault-password"
+  vcli vault keysign --message "abcd1234..." --derive "m/44'/60'/0'/0/0" --password "vault-password"
 
   # Sign a Solana message (EdDSA)
-  vcli vault keysign --message "abcd1234..." --eddsa -p "vault-password"
+  vcli vault keysign --message "abcd1234..." --eddsa --password "vault-password"
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actualPassword := vaultPassword
@@ -152,7 +152,7 @@ Example:
 				actualPassword = envPass
 			}
 			if actualPassword == "" {
-				return fmt.Errorf("password required: use -p or set VAULT_PASSWORD")
+				return fmt.Errorf("password required: use --password or set VAULT_PASSWORD")
 			}
 			return runVaultKeysign(message, derivePath, isEdDSA, actualPassword)
 		},
@@ -161,7 +161,7 @@ Example:
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Hex-encoded message hash to sign (required)")
 	cmd.Flags().StringVarP(&derivePath, "derive", "d", "m/44'/60'/0'/0/0", "BIP44 derivation path (for ECDSA)")
 	cmd.Flags().BoolVar(&isEdDSA, "eddsa", false, "Use EdDSA signing (for Solana, etc.)")
-	cmd.Flags().StringVarP(&vaultPassword, "password", "p", "", "Fast Vault password (or set VAULT_PASSWORD)")
+	cmd.Flags().StringVar(&vaultPassword, "password", "", "Fast Vault password (or set VAULT_PASSWORD)")
 	cmd.MarkFlagRequired("message")
 
 	return cmd
@@ -190,7 +190,6 @@ func newVaultListCmd() *cobra.Command {
 func newVaultImportCmd() *cobra.Command {
 	var file string
 	var password string
-	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "import",
@@ -201,16 +200,16 @@ The file should be a vault backup exported from the Vultisig mobile app or exten
 If the vault is encrypted, you will be prompted for the password interactively,
 or you can provide it with --password (be careful with special characters in shells).
 
+Importing always overwrites any existing vault.
+
 Environment variables (override flags):
   VAULT_PATH      - Path to vault file
   VAULT_PASSWORD  - Decryption password
 
-Use --force to overwrite any existing vault (useful after plugin uninstall).
-
 Example:
   vcli vault import --file ~/Downloads/MyVault.vult
   vcli vault import --file ~/Downloads/MyVault.vult --password "your-password"
-  VAULT_PATH=/path/to/vault.vult VAULT_PASSWORD=secret vcli vault import --force
+  VAULT_PATH=/path/to/vault.vult VAULT_PASSWORD=secret vcli vault import
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actualFile := file
@@ -232,13 +231,12 @@ Example:
 					return err
 				}
 			}
-			return runVaultImport(actualFile, actualPassword, force)
+			return runVaultImport(actualFile, actualPassword)
 		},
 	}
 
-	cmd.Flags().StringVarP(&file, "file", "f", "", "Vault file to import (or set VAULT_PATH env var)")
-	cmd.Flags().StringVarP(&password, "password", "p", "", "Decryption password (or set VAULT_PASSWORD env var)")
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing vault")
+	cmd.Flags().StringVar(&file, "file", "", "Vault file to import (or set VAULT_PATH env var)")
+	cmd.Flags().StringVar(&password, "password", "", "Decryption password (or set VAULT_PASSWORD env var)")
 
 	return cmd
 }
@@ -537,22 +535,13 @@ func runVaultList() error {
 	return nil
 }
 
-func runVaultImport(file, password string, force bool) error {
+func runVaultImport(file, password string) error {
 	startTime := time.Now()
 
-	// Check for existing vault
+	// Always remove existing vaults to start fresh
 	existingVaults, _ := ListVaults()
-	if len(existingVaults) > 0 && !force {
-		existing := existingVaults[0]
-		if len(existing.Signers) > 2 {
-			fmt.Printf("Warning: Existing vault has %d signers (from plugin install).\n", len(existing.Signers))
-			fmt.Println("Use --force to overwrite with fresh 2-party vault.")
-			return fmt.Errorf("existing vault found with %d signers. Use --force to overwrite", len(existing.Signers))
-		}
-	}
-
-	if force && len(existingVaults) > 0 {
-		fmt.Println("Force mode: removing existing vault...")
+	if len(existingVaults) > 0 {
+		fmt.Println("Removing existing vault...")
 		vaultPath := VaultStoragePath()
 		os.RemoveAll(vaultPath)
 		os.MkdirAll(vaultPath, 0700)
@@ -696,7 +685,7 @@ func runVaultImport(file, password string, force bool) error {
 	fmt.Println("│                                                                 │")
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 	fmt.Println()
-	fmt.Println("Next: ./vcli plugin install <plugin-id> -p <password>")
+	fmt.Println("Next: ./vcli plugin install <plugin-id> --password <password>")
 
 	return nil
 }

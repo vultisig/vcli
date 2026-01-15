@@ -53,7 +53,7 @@ cp local/vault.env.example local/vault.env
 # Edit local/vault.env with your VAULT_PATH and VAULT_PASSWORD
 
 # 2. Build and start everything
-make local-start
+make start
 
 # 3. Import vault (auto-loads vault.env!)
 ./local/scripts/vcli.sh vault import
@@ -62,14 +62,14 @@ make local-start
 ./local/scripts/vcli.sh plugin install dca
 
 # 5. Add policy
-./local/scripts/vcli.sh policy add --plugin dca -c local/configs/policies/test-one-time-policy.json
+./local/scripts/vcli.sh policy add --plugin dca --policy-file local/configs/policies/test-one-time-policy.json
 
 # 6. Check status
 ./local/scripts/vcli.sh report
 ./local/scripts/vcli.sh policy status <policy-id>
 
 # 7. Stop everything
-make local-stop
+make stop
 ```
 
 ### Plugin Aliases
@@ -96,9 +96,9 @@ VAULT_PASSWORD=your-password
 
 ### Flag Conventions
 
-- `-p, --password` = Vault password (all commands)
-- `--plugin` = Plugin ID or alias (no `-p` short flag!)
-- `-c, --config` = Config file path
+- `--password` = Vault password (all commands)
+- `--plugin` = Plugin ID or alias
+- `--policy-file` = Config file path
 
 ## How It Works
 
@@ -106,7 +106,7 @@ VAULT_PASSWORD=your-password
 
 ```bash
 ./local/scripts/vcli.sh vault import
-# Or explicitly: ./local/scripts/vcli.sh vault import -f /path/to/vault.vult -p "Password"
+# Or explicitly: ./local/scripts/vcli.sh vault import --file /path/to/vault.vult --password "Password"
 ```
 
 This:
@@ -118,7 +118,7 @@ This:
 
 ```bash
 ./local/scripts/vcli.sh plugin install dca
-# Or with full ID: ./local/scripts/vcli.sh plugin install vultisig-dca-0000 -p "Password"
+# Or with full ID: ./local/scripts/vcli.sh plugin install vultisig-dca-0000 --password "Password"
 ```
 
 This performs a **4-party TSS reshare** (~20 seconds):
@@ -157,8 +157,8 @@ Before (2-of-2):                 After (2-of-2 + 2-of-4):
 ### Step 3: Policy Add
 
 ```bash
-./local/scripts/vcli.sh policy add --plugin dca -c policy.json
-# Or explicitly: ./local/scripts/vcli.sh policy add --plugin vultisig-dca-0000 -c policy.json -p "Password"
+./local/scripts/vcli.sh policy add --plugin dca --policy-file policy.json
+# Or explicitly: ./local/scripts/vcli.sh policy add --plugin vultisig-dca-0000 --policy-file policy.json --password "Password"
 ```
 
 This:
@@ -170,10 +170,10 @@ This:
 ## E2E Testing Checklist
 
 1. **Setup vault.env**: `cp local/vault.env.example local/vault.env` (edit with your values)
-2. **Start services**: `make local-start`
+2. **Start services**: `make start`
 3. **Import vault**: `./local/scripts/vcli.sh vault import`
 4. **Install plugin**: `./local/scripts/vcli.sh plugin install dca`
-5. **Add policy**: `./local/scripts/vcli.sh policy add --plugin dca -c local/configs/policies/test-one-time-policy.json`
+5. **Add policy**: `./local/scripts/vcli.sh policy add --plugin dca --policy-file local/configs/policies/test-one-time-policy.json`
 6. **VERIFY EXECUTION**: Wait 30s for scheduler, then check:
    ```bash
    ./local/scripts/vcli.sh policy status <policy-id>
@@ -182,7 +182,7 @@ This:
    ```
 7. **Check overall status**: `./local/scripts/vcli.sh report`
 8. **Uninstall**: `./local/scripts/vcli.sh plugin uninstall dca`
-9. **Stop**: `make local-stop`
+9. **Stop**: `make stop`
 
 ## Configuration
 
@@ -243,10 +243,10 @@ If verifier and DCA workers share queues, they'll steal each other's tasks and t
 
 ```bash
 # Use double quotes for passwords with special chars
-./local/scripts/vcli.sh vault import -f vault.vult -p "YourPassword!"
+./local/scripts/vcli.sh vault import --file vault.vult --password "YourPassword!"
 
-# -p always means password, --plugin for plugin ID
-./local/scripts/vcli.sh policy add --plugin dca -c policy.json -p "YourPassword!"
+# --password for password, --plugin for plugin ID
+./local/scripts/vcli.sh policy add --plugin dca --policy-file policy.json --password "YourPassword!"
 ```
 
 ### Billing Array
@@ -297,7 +297,7 @@ lsof -i :8080
 lsof -i :8082
 
 # Force stop everything
-make local-stop
+make stop
 ```
 
 ### Plugin Install Fails / TSS Stuck
@@ -424,10 +424,10 @@ docker exec vultisig-minio mc ls local/vultisig-dca/
 
 ```bash
 # Stop services only
-make local-stop
+make stop
 
 # Stop and remove all Docker data (full reset)
-make local-stop
+make stop
 docker compose -f local/configs/docker-compose.yaml down -v
 
 # Clear local vault data (start fresh)
@@ -522,7 +522,7 @@ Amounts are automatically converted to smallest units:
 cat /tmp/swap.json
 
 # 3. Add the policy (addresses auto-filled from vault)
-./local/scripts/vcli.sh policy add --plugin dca -c /tmp/swap.json
+./local/scripts/vcli.sh policy add --plugin dca --policy-file /tmp/swap.json
 ```
 
 ## Test Policy Examples

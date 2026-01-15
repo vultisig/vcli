@@ -65,7 +65,7 @@ This performs a 4-party reshare with:
 Add a policy for the installed plugin:
 
 ```bash
-./vcli policy add --plugin vultisig-dca-0000 --config policy.json --password "your-password"
+./vcli policy add --plugin vultisig-dca-0000 --policy-file policy.json --password "your-password"
 ```
 
 Example `policy.json` for DCA plugin:
@@ -162,7 +162,7 @@ docker exec vultisig-postgres psql -U vultisig -d "vultisig-dca" \
 ./vcli policy list --plugin <plugin-id>
 
 # Add a new policy
-./vcli policy add --plugin <plugin-id> --config <policy.json> --password <password>
+./vcli policy add --plugin <plugin-id> --policy-file <policy.json> --password <password>
 
 # Show policy details
 ./vcli policy info <policy-id>

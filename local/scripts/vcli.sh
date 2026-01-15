@@ -7,7 +7,7 @@
 # the Go binary at compile time. macOS requires DYLD_LIBRARY_PATH to override
 # the embedded rpath.
 #
-# Why vault.env? Allows you to run commands without passing -p every time:
+# Why vault.env? Allows you to run commands without passing --password every time:
 #   ./vcli.sh plugin install dca   # Uses VAULT_PASSWORD from vault.env
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
