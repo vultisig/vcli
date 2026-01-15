@@ -252,7 +252,7 @@ func newVaultExportCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&output, "output", "o", "", "Output file path")
+	cmd.Flags().StringVar(&output, "output", "", "Output file path")
 
 	return cmd
 }
@@ -1276,7 +1276,69 @@ func runVaultDetails(chainFilter string) error {
 			fmt.Printf("│ Bitcoin                                                         │\n")
 			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
 			fmt.Printf("│ Address: %s\n", btcAddr)
-			fmt.Printf("│ BTC: (use explorer to check balance)\n")
+			btcBal, balErr := getUTXOBalance("bitcoin", btcAddr)
+			if balErr != nil {
+				fmt.Printf("│ BTC: error fetching balance\n")
+			} else {
+				fmt.Printf("│ BTC: %s\n", formatBalance(btcBal, 8))
+			}
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// Litecoin
+	if chainFilter == "" || strings.EqualFold(chainFilter, "litecoin") || strings.EqualFold(chainFilter, "ltc") {
+		ltcAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.Litecoin)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ Litecoin                                                        │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", ltcAddr)
+			ltcBal, balErr := getUTXOBalance("litecoin", ltcAddr)
+			if balErr != nil {
+				fmt.Printf("│ LTC: error fetching balance\n")
+			} else {
+				fmt.Printf("│ LTC: %s\n", formatBalance(ltcBal, 8))
+			}
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// Bitcoin Cash
+	if chainFilter == "" || strings.EqualFold(chainFilter, "bitcoincash") || strings.EqualFold(chainFilter, "bch") {
+		bchAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.BitcoinCash)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ Bitcoin Cash                                                    │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", bchAddr)
+			bchBal, balErr := getUTXOBalance("bitcoin-cash", bchAddr)
+			if balErr != nil {
+				fmt.Printf("│ BCH: error fetching balance\n")
+			} else {
+				fmt.Printf("│ BCH: %s\n", formatBalance(bchBal, 8))
+			}
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// Dogecoin
+	if chainFilter == "" || strings.EqualFold(chainFilter, "dogecoin") || strings.EqualFold(chainFilter, "doge") {
+		dogeAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.Dogecoin)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ Dogecoin                                                        │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", dogeAddr)
+			dogeBal, balErr := getUTXOBalance("dogecoin", dogeAddr)
+			if balErr != nil {
+				fmt.Printf("│ DOGE: error fetching balance\n")
+			} else {
+				fmt.Printf("│ DOGE: %s\n", formatBalance(dogeBal, 8))
+			}
 			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
 			fmt.Println()
 		}
@@ -1487,4 +1549,48 @@ func getERC20Balance(rpcURL, tokenAddress, walletAddress string) (*big.Int, erro
 	balance.SetString(balanceHex, 16)
 
 	return balance, nil
+}
+
+const blockchairBaseURL = "https://api.vultisig.com/blockchair"
+
+func getUTXOBalance(chain, addr string) (*big.Int, error) {
+	url := fmt.Sprintf("%s/%s/dashboards/address/%s", blockchairBaseURL, chain, addr)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Data map[string]struct {
+			Address struct {
+				Balance int64 `json:"balance"`
+			} `json:"address"`
+		} `json:"data"`
+	}
+
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, data := range result.Data {
+		return big.NewInt(data.Address.Balance), nil
+	}
+
+	return big.NewInt(0), nil
 }

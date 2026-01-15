@@ -450,7 +450,7 @@ Generate policy JSON files with easy asset aliases instead of manually writing J
 ./local/scripts/vcli.sh policy generate --from usdt --to btc --amount 100 --frequency daily
 
 # Output to file
-./local/scripts/vcli.sh policy generate --from eth --to usdc --amount 0.01 -o swap.json
+./local/scripts/vcli.sh policy generate --from eth --to usdc --amount 0.01 --output swap.json
 
 # Chain override (for L2s)
 ./local/scripts/vcli.sh policy generate --from eth:arbitrum --to usdc:arbitrum --amount 0.001
@@ -458,14 +458,14 @@ Generate policy JSON files with easy asset aliases instead of manually writing J
 
 ### Flags
 
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--from` | `-f` | (required) | Source asset |
-| `--to` | `-t` | (required) | Destination asset |
-| `--amount` | `-a` | (required) | Amount in human units (e.g., 0.01 ETH) |
-| `--frequency` | | `one-time` | Execution frequency |
-| `--plugin` | | `dca` | Plugin ID or alias |
-| `--output` | `-o` | stdout | Output file path |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--from` | (required) | Source asset |
+| `--to` | (required) | Destination asset |
+| `--amount` | (required) | Amount in human units (e.g., 0.01 ETH) |
+| `--frequency` | `one-time` | Execution frequency |
+| `--plugin` | `dca` | Plugin ID or alias |
+| `--output` | stdout | Output file path |
 
 ### Asset Aliases
 
@@ -516,7 +516,7 @@ Amounts are automatically converted to smallest units:
 
 ```bash
 # 1. Generate policy
-./local/scripts/vcli.sh policy generate --from eth --to usdc --amount 0.01 -o /tmp/swap.json
+./local/scripts/vcli.sh policy generate --from eth --to usdc --amount 0.01 --output /tmp/swap.json
 
 # 2. Review it
 cat /tmp/swap.json
