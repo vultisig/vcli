@@ -209,14 +209,6 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-// Local development - point to sibling repos
-replace (
-	github.com/vultisig/app-recurring => ../../app-recurring
-	github.com/vultisig/verifier => ../../verifier
-	github.com/vultisig/vultiserver => ../../vultiserver
-	github.com/vultisig/vultisig-go => ../../vultisig-go
-)
-
 // Required dependency fixes (same as verifier)
 replace (
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
