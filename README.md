@@ -10,7 +10,7 @@ Local development environment for testing Vultisig plugins with Docker-based inf
 
 ```
 START → IMPORT → INSTALL → [ GENERATE → ADD → MONITOR → DELETE ] → UNINSTALL → STOP
-                                      ↑_______repeat_______↲
+                                ↑__________repeat_________↲
 ```
 
 The bracketed steps (policy testing) can be repeated. Everything else runs once per test cycle.
