@@ -214,6 +214,7 @@ replace (
 	github.com/vultisig/app-recurring => ../../app-recurring
 	github.com/vultisig/verifier => ../../verifier
 	github.com/vultisig/vultiserver => ../../vultiserver
+	github.com/vultisig/vultisig-go => ../../vultisig-go
 )
 
 // Required dependency fixes (same as verifier)
