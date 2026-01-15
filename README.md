@@ -2,6 +2,30 @@
 
 Local development environment for testing Vultisig plugins with Docker-based infrastructure.
 
+---
+
+## IMPORTANT: Read Before Starting
+
+**You MUST follow the E2E testing flow exactly as documented below.** The flow is:
+
+```
+START → IMPORT → INSTALL → [ GENERATE → ADD → MONITOR → DELETE ] → UNINSTALL → STOP
+                                      ↑_______repeat_______↲
+```
+
+The bracketed steps (policy testing) can be repeated. Everything else runs once per test cycle.
+
+**Do NOT:**
+- Restart mid-way through a test cycle
+- Move keyshare files manually between directories
+- Edit database records directly (no manual SQL inserts/updates)
+- Skip steps (except repeating the policy loop)
+- Re-use state from a previous failed run
+
+**If something fails:** Run `make local-stop` (cleans all state) and start fresh from Step 1.
+
+---
+
 ## Prerequisites
 
 - **Go 1.23+** - https://go.dev/dl/
@@ -42,7 +66,16 @@ This creates the native library in `includes/darwin/` (macOS) or `includes/linux
 
 **Note:** The library path must be configured in `local/cluster.yaml` under `library.dyld_path`.
 
-## Quick Start
+## Vault Requirement
+
+You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig mobile app:
+
+1. Create a vault in the Vultisig mobile app with "Fast Vault" enabled
+2. Export the vault backup (Settings -> Export -> Backup file)
+3. Transfer the `.vult` file to your development machine
+4. Configure the path in `local/vault.env`
+
+## Initial Setup (One-Time)
 
 ```bash
 cd vultisig-cluster
@@ -54,34 +87,260 @@ cp local/cluster.yaml.example local/cluster.yaml
 # 2. Configure vault credentials
 cp local/vault.env.example local/vault.env
 # Edit vault.env with your vault file path and password
+```
 
-# 3. Start all services
+---
+
+## E2E Testing Flow
+
+Follow these steps **in order, every time**. Do not skip steps.
+
+### Step 1: START
+
+Start all services (infrastructure + application services).
+
+```bash
 make local-start
+```
 
-# 4. Import your vault
-./local/vcli.sh vault import -f /path/to/vault.vult -p "password" --force
+**Validation:**
+```bash
+make local-status
+```
 
-# 5. Install a plugin (4-party TSS reshare)
-./local/vcli.sh plugin install vultisig-dca-0000 -p "password"
+✅ **Expected:** All services show as "running":
+- PostgreSQL, Redis, MinIO (infrastructure)
+- Verifier API, Verifier Worker (verifier stack)
+- DCA Server, DCA Worker, DCA Scheduler (plugin stack)
 
-# 6. Add a policy
-./local/vcli.sh policy add --plugin vultisig-dca-0000 -c local/configs/policies/test-one-time-policy.json --password "password"
+❌ **If validation fails:** Check logs with `make local-logs`. Fix the issue and restart with `make local-stop && make local-start`.
 
-# 7. Check status
+---
+
+### Step 2: IMPORT
+
+Import your vault into the local environment.
+
+```bash
+./local/vcli.sh vault import -f /path/to/vault.vult -p "password"
+```
+
+**Validation:**
+```bash
+./local/vcli.sh vault list
 ./local/vcli.sh report
+```
 
-# 8. Stop all services
+✅ **Expected:**
+- `vault list` shows your imported vault
+- `report` displays vault name, public keys (ECDSA/EdDSA), and signers
+
+❌ **If validation fails:** Verify your `.vult` file path and password. The vault must be a Fast Vault.
+
+---
+
+### Step 3: INSTALL
+
+Install a plugin. This performs a 4-party TSS reshare.
+
+```bash
+./local/vcli.sh plugin install vultisig-dca-0000 -p "password"
+```
+
+**What happens:** A 4-party reshare occurs between:
+- CLI (your local vault share)
+- Fast Vault Server (production cloud backup)
+- Verifier Worker (local)
+- DCA Plugin Worker (local)
+
+**Validation:**
+```bash
+./local/vcli.sh report
+```
+
+✅ **Expected:**
+- Report shows plugin installation in database
+- Report shows keyshare files stored in MinIO (4 parties)
+- Signers list now includes verifier and plugin parties
+
+❌ **If validation fails:** Check that both workers are running (`make local-status`). Check logs for TSS errors. **Do not attempt to fix manually** - run `make local-stop && make local-start` and restart from Step 1.
+
+---
+
+### Policy Testing Loop (Steps 4-7)
+
+Once a plugin is installed, you can run multiple policies without restarting. Repeat Steps 4-7 as many times as needed:
+
+```
+┌─────────────────────────────────────────────────┐
+│  GENERATE → ADD → MONITOR → DELETE  (repeat)   │
+└─────────────────────────────────────────────────┘
+```
+
+This is the **only** valid shortcut. You may:
+- Test different policy configurations
+- Run the same policy multiple times
+- Test edge cases and error conditions
+
+When done testing policies, continue to Step 8 (UNINSTALL) before stopping.
+
+---
+
+### Step 4: GENERATE
+
+Generate (or customize) a policy configuration file.
+
+```bash
+# Use an existing template
+cp local/configs/policies/test-one-time-policy.json my-policy.json
+
+# Or create your own (see example below)
+```
+
+**Example policy JSON:**
+```json
+{
+  "recipe": {
+    "from_chain": "ethereum",
+    "to_chain": "ethereum",
+    "from_asset": "ETH",
+    "to_asset": "USDC",
+    "amount": "0.001",
+    "frequency": "daily"
+  },
+  "billing": {
+    "type": "one_time",
+    "amount": 0
+  }
+}
+```
+
+**Validation:**
+```bash
+# Verify JSON is valid
+cat my-policy.json | python3 -m json.tool > /dev/null && echo "Valid JSON"
+```
+
+✅ **Expected:** "Valid JSON" printed with no errors.
+
+❌ **If validation fails:** Fix JSON syntax errors in your policy file.
+
+---
+
+### Step 5: ADD
+
+Add the policy to the installed plugin.
+
+```bash
+./local/vcli.sh policy add --plugin vultisig-dca-0000 -c my-policy.json --password "password"
+```
+
+**Validation:**
+```bash
+./local/vcli.sh policy list -p vultisig-dca-0000
+```
+
+✅ **Expected:** Your policy appears in the list with a policy ID.
+
+❌ **If validation fails:** Check that the plugin is installed (Step 3). Check verifier logs for signing errors.
+
+---
+
+### Step 6: MONITOR
+
+Monitor the policy execution.
+
+```bash
+# Check policy status
+./local/vcli.sh policy status <policy-id>
+
+# Watch logs in real-time
+make local-logs
+
+# Or watch specific service logs
+tail -f /tmp/dca-worker.log
+tail -f /tmp/dca-scheduler.log
+```
+
+**Validation:**
+```bash
+./local/vcli.sh policy status <policy-id>
+```
+
+✅ **Expected:** Policy shows execution history, pending/completed transactions.
+
+❌ **If validation fails:** Check scheduler and worker logs for errors. Verify the policy frequency and chain configuration.
+
+---
+
+### Step 7: DELETE
+
+Delete the policy.
+
+```bash
+./local/vcli.sh policy delete <policy-id> --password "password"
+```
+
+**Validation:**
+```bash
+./local/vcli.sh policy list -p vultisig-dca-0000
+```
+
+✅ **Expected:** The deleted policy no longer appears in the list.
+
+❌ **If validation fails:** Verify you used the correct policy ID.
+
+---
+
+### Step 8: UNINSTALL
+
+Uninstall the plugin.
+
+```bash
+./local/vcli.sh plugin uninstall vultisig-dca-0000
+```
+
+**Validation:**
+```bash
+./local/vcli.sh report
+```
+
+✅ **Expected:** Plugin installation no longer appears in the report.
+
+❌ **If validation fails:** Check for remaining policies - all policies must be deleted before uninstalling.
+
+---
+
+### Step 9: STOP
+
+Stop all services.
+
+```bash
 make local-stop
 ```
 
-## Vault Requirement
+**Validation:**
+```bash
+make local-status
+```
 
-You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig mobile app:
+✅ **Expected:** All services show as stopped or not running.
 
-1. Create a vault in the Vultisig mobile app with "Fast Vault" enabled
-2. Export the vault backup (Settings -> Export -> Backup file)
-3. Transfer the `.vult` file to your development machine
-4. Configure the path in `local/vault.env`
+---
+
+## What NOT To Do
+
+| Bad Practice | Why It Breaks Things |
+|--------------|---------------------|
+| Restarting mid-test | TSS sessions are stateful; partial state causes reshare failures |
+| Moving keyshare files | Keyshares are tied to specific party IDs and sessions |
+| Manual DB edits | Breaks consistency between DB records and MinIO keyshares |
+| Skipping UNINSTALL | Leaves orphaned keyshares that conflict with future installs |
+| Re-using failed state | Corrupted state propagates; always clean start |
+
+**The only recovery from a failed test is:** `make local-stop` then start fresh from Step 1.
+
+---
 
 ## Service Modes
 
@@ -97,13 +356,11 @@ services:
 
 This lets you test local changes against production relay/vultiserver, or run everything locally.
 
-## vcli Commands
-
-The `vcli` CLI manages vaults, plugins, and policies:
+## vcli Commands Reference
 
 ```bash
 # Vault management
-./local/vcli.sh vault import -f /path/to/vault.vult -p "password" --force
+./local/vcli.sh vault import -f /path/to/vault.vult -p "password"
 ./local/vcli.sh vault list
 
 # Plugin management
@@ -154,10 +411,9 @@ The workers use separate task queues to prevent task stealing. This is configure
 ```bash
 make local-build    # Build vcli
 make local-start    # Build and start all services
-make local-stop     # Stop all services
+make local-stop     # Stop all services and clean all state
 make local-status   # Show service status
 make local-logs     # Tail all logs
-make local-clean    # Remove binaries and configs
 ```
 
 ## Directory Structure

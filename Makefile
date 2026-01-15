@@ -12,7 +12,7 @@ help:
 	@echo "Local Development:"
 	@echo "  local-build       Build vcli"
 	@echo "  local-start       Start all local services"
-	@echo "  local-stop        Stop all local services"
+	@echo "  local-stop        Stop all services and clean all state"
 	@echo "  local-status      Show local service status"
 	@echo "  local-logs        Tail all local logs"
 	@echo ""
@@ -238,8 +238,13 @@ local-stop:
 	@if [ -f ./local/vcli ]; then \
 		$(VCLI) stop; \
 	else \
-		echo "vcli not built. Run: make local-build"; \
+		echo "vcli not built, stopping docker only..."; \
 	fi
+	@echo "Cleaning up all state..."
+	@docker compose -f local/configs/docker-compose.yaml down -v 2>/dev/null || true
+	@rm -f /tmp/verifier.log /tmp/worker.log /tmp/dca.log /tmp/dca-worker.log /tmp/dca-scheduler.log 2>/dev/null || true
+	@rm -rf ~/.vultisig/vaults/ 2>/dev/null || true
+	@echo "Stopped and cleaned."
 
 local-status:
 	@if [ -f ./local/vcli ]; then \
@@ -257,7 +262,3 @@ local-logs:
 	@echo ""
 	@echo "=== DCA Worker ===" && tail -20 /tmp/dca-worker.log 2>/dev/null || echo "(not running)"
 
-local-clean:
-	rm -f local/vcli
-	rm -f local/cluster.yaml
-	docker compose -f local/configs/docker-compose.yaml down -v 2>/dev/null || true

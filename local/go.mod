@@ -10,10 +10,10 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/vultisig/commondata v0.0.0-20251125054425-71e1e8231dd3
-	github.com/vultisig/recipes v0.0.0-20260113074806-a2b9f8932863
+	github.com/vultisig/recipes v0.0.0-20260114093150-904c0eefd906
 	github.com/vultisig/verifier v0.0.0
 	github.com/vultisig/vultiserver v0.0.0-20250825042420-c6e6ac281110
-	github.com/vultisig/vultisig-go v0.0.0-20251201083443-f9306a44b356
+	github.com/vultisig/vultisig-go v0.0.0-20260114092710-6c38516a0c85
 	golang.org/x/term v0.34.0
 	google.golang.org/protobuf v1.36.8
 	gopkg.in/yaml.v3 v3.0.1
