@@ -18,8 +18,6 @@ setup-env.sh
 # Local development
 local/vcli
 local/devctl
-local/vault.env
-local/configs/vault.env
 
 # Vault keyshare files (sensitive - never commit)
 *.vult

@@ -245,7 +245,7 @@ stop:
 		echo "vcli not built, stopping docker only..."; \
 	fi
 	@echo "Cleaning up all state..."
-	@docker compose -f local/configs/docker-compose.yaml down -v 2>/dev/null || true
+	@docker compose -f local/docker-compose.yaml down -v 2>/dev/null || true
 	@rm -f /tmp/verifier.log /tmp/worker.log /tmp/dca.log /tmp/dca-worker.log /tmp/dca-scheduler.log 2>/dev/null || true
 	@rm -rf ~/.vultisig/vaults/ 2>/dev/null || true
 	@echo "Stopped and cleaned."

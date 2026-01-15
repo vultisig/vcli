@@ -206,7 +206,7 @@ Generate (or customize) a policy configuration file.
 
 ```bash
 # Use an existing template
-cp local/configs/policies/test-one-time-policy.json my-policy.json
+cp local/policies/test-one-time-policy.json my-policy.json
 
 # Or create your own (see example below)
 ```
@@ -398,8 +398,6 @@ The mode flag overrides `cluster.yaml` service settings at runtime.
 ./local/vcli.sh status
 ```
 
-See [local/docs/VCLI.md](local/docs/VCLI.md) for detailed usage.
-
 ## Services & Ports
 
 | Service | Port | Description |
@@ -444,13 +442,11 @@ make logs                   # Tail all logs
 vultisig-cluster/
 ├── local/
 │   ├── cmd/vcli/             # vcli source code
-│   ├── scripts/              # Shell scripts (vcli.sh, tests)
-│   ├── docs/                 # Documentation (VCLI.md)
+│   ├── scripts/              # Shell scripts (vcli.sh)
 │   ├── keyshares/            # Put your .vult files here
-│   ├── configs/
-│   │   ├── policies/         # Policy JSON templates
-│   │   ├── *.env             # Service environment files
-│   │   └── docker-compose.yaml
+│   ├── policies/             # Policy JSON templates
+│   ├── configs/              # Service environment files (*.env)
+│   ├── docker-compose.yaml   # Docker infrastructure
 │   ├── cluster.yaml          # Cluster configuration
 │   └── Dockerfile            # vcli container image
 └── Makefile

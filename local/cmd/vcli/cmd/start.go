@@ -87,6 +87,7 @@ func runStart(skipDCA bool, mode string) error {
 
 	verifierRoot := config.Repos.Verifier
 	dcaRoot := config.Repos.DCA
+	localDir := findLocalDir()
 	configsDir := findConfigsDir()
 	dyldPath := config.GetDYLDPath()
 
@@ -109,7 +110,7 @@ func runStart(skipDCA bool, mode string) error {
 	fmt.Println()
 	fmt.Printf("%s[1/8]%s Starting Docker infrastructure...\n", colorYellow, colorReset)
 
-	composeFile := filepath.Join(configsDir, "docker-compose.yaml")
+	composeFile := filepath.Join(localDir, "docker-compose.yaml")
 	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
 		return fmt.Errorf("docker-compose.yaml not found at %s", composeFile)
 	}
@@ -190,7 +191,7 @@ func runStart(skipDCA bool, mode string) error {
 
 	// Seed plugins
 	fmt.Println("  Seeding plugins...")
-	seedFile := filepath.Join(configsDir, "seed-plugins.sql")
+	seedFile := filepath.Join(localDir, "seed-plugins.sql")
 	seedCmd := exec.Command("docker", "exec", "-i", "vultisig-postgres", "psql", "-U", "vultisig", "-d", "vultisig-verifier")
 	seedData, _ := os.ReadFile(seedFile)
 	seedCmd.Stdin = strings.NewReader(string(seedData))
@@ -390,6 +391,23 @@ func loadEnvFile(path string) []string {
 		envVars = append(envVars, line)
 	}
 	return envVars
+}
+
+func findLocalDir() string {
+	paths := []string{
+		".",
+		"local",
+	}
+
+	for _, p := range paths {
+		dockerCompose := filepath.Join(p, "docker-compose.yaml")
+		if _, err := os.Stat(dockerCompose); err == nil {
+			abs, _ := filepath.Abs(p)
+			return abs
+		}
+	}
+
+	return "local"
 }
 
 func findConfigsDir() string {
