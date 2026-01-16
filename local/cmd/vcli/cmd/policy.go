@@ -399,7 +399,31 @@ func runPolicyAdd(pluginID, configFile string, password string) error {
 		return fmt.Errorf("marshal policy request: %w", err)
 	}
 
-	// Step 7: Submit to verifier
+	// Step 7: Validate policy before submit
+	fmt.Println("\nValidating policy...")
+
+	validateURL := cfg.Verifier + "/plugin/policy/validate"
+	validateReq, err := http.NewRequestWithContext(ctx, "POST", validateURL, bytes.NewReader(policyJSON))
+	if err != nil {
+		return fmt.Errorf("create validate request: %w", err)
+	}
+	validateReq.Header.Set("Content-Type", "application/json")
+	validateReq.Header.Set("Authorization", authHeader)
+
+	validateResp, err := http.DefaultClient.Do(validateReq)
+	if err != nil {
+		return fmt.Errorf("validate policy: %w", err)
+	}
+	defer validateResp.Body.Close()
+
+	validateBody, _ := io.ReadAll(validateResp.Body)
+
+	if validateResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("policy validation failed (%d): %s", validateResp.StatusCode, string(validateBody))
+	}
+	fmt.Println("  Policy validated successfully")
+
+	// Step 8: Submit to verifier
 	fmt.Println("\nSubmitting policy to verifier...")
 
 	url := cfg.Verifier + "/plugin/policy"
