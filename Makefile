@@ -1,5 +1,5 @@
 .PHONY: help init plan apply destroy cluster-setup deploy-all deploy-infra deploy-services test clean
-.PHONY: deploy-k8s deploy-k8s-prod
+.PHONY: deploy-k8s deploy-k8s-prod k8s-status
 .PHONY: build start stop status logs
 
 TERRAFORM_DIR := infrastructure/terraform
@@ -201,7 +201,7 @@ port-forward:
 	@echo "Press Ctrl+C to stop all port forwards"
 	@wait
 
-status:
+k8s-status:
 	@echo "=== Cluster Status ==="
 	@echo ""
 	@echo "Nodes:"
