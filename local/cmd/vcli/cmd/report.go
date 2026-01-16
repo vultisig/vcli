@@ -202,7 +202,7 @@ func printVaultSection(cfg *DevConfig) {
 
 	if cfg.PublicKeyECDSA == "" {
 		fmt.Println("│  ✗ No vault configured                                          │")
-		fmt.Println("│    Run: vcli vault import -f <file> -p <password>             │")
+		fmt.Println("│    Run: vcli vault import --file <file> --password <password> │")
 		fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 		fmt.Println()
 		return
@@ -287,7 +287,7 @@ func printPluginSection(cfg *DevConfig) {
 
 	if count == 0 {
 		fmt.Println("│  ✗ No plugins installed                                         │")
-		fmt.Println("│    Run: vcli plugin install <plugin-id> -p <password>         │")
+		fmt.Println("│    Run: vcli plugin install <id> --password <password>        │")
 	}
 
 	var tokenCount int

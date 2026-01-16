@@ -166,18 +166,28 @@ type Asset struct {
 // AssetAliases maps short asset names to their chain and token address
 var AssetAliases = map[string]Asset{
 	// Native tokens (token = "" means native)
-	"eth":  {Chain: "Ethereum", Token: ""},
-	"btc":  {Chain: "Bitcoin", Token: ""},
-	"sol":  {Chain: "Solana", Token: ""},
-	"rune": {Chain: "THORChain", Token: ""},
-	"bnb":  {Chain: "BSC", Token: ""},
-	"avax": {Chain: "Avalanche", Token: ""},
+	"eth":   {Chain: "Ethereum", Token: ""},
+	"btc":   {Chain: "Bitcoin", Token: ""},
+	"ltc":   {Chain: "Litecoin", Token: ""},
+	"bch":   {Chain: "Bitcoin-Cash", Token: ""},
+	"doge":  {Chain: "Dogecoin", Token: ""},
+	"sol":   {Chain: "Solana", Token: ""},
+	"rune":  {Chain: "THORChain", Token: ""},
+	"bnb":   {Chain: "BSC", Token: ""},
+	"avax":  {Chain: "Avalanche", Token: ""},
 	"matic": {Chain: "Polygon", Token: ""},
+	"zec":   {Chain: "Zcash", Token: ""},
+	"dash":  {Chain: "Dash", Token: ""},
+	"atom":  {Chain: "Cosmos", Token: ""},
 
 	// Stablecoins (Ethereum mainnet)
 	"usdc": {Chain: "Ethereum", Token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"},
 	"usdt": {Chain: "Ethereum", Token: "0xdAC17F958D2ee523a2206206994597C13D831ec7"},
 	"dai":  {Chain: "Ethereum", Token: "0x6B175474E89094C44Da98b954EesfdDAD3Ef9ebA0"},
+
+	// ERC20 tokens (Ethereum mainnet)
+	"wbtc": {Chain: "Ethereum", Token: "0x2260FAC5E5542A773Aa44fBCfeDf7C193bc2C599"},
+	"link": {Chain: "Ethereum", Token: "0x514910771AF9Ca656af840dff83E8264EcF986CA"},
 }
 
 // ResolveAsset converts an asset alias to its chain and token.

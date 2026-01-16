@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -96,11 +97,11 @@ Plugin ID can be an alias (dca, fee, sends) or full ID.
 Run 'vcli plugin aliases' to see available aliases.
 
 Environment variables:
-  VAULT_PASSWORD  - Fast Vault password (or use -p flag)
+  VAULT_PASSWORD  - Fast Vault password (or use --password flag)
 
 Example:
-  vcli vault reshare --plugin dca -p "your-password"
-  vcli vault reshare --plugin vultisig-fees-feee -p "your-password"
+  vcli vault reshare --plugin dca --password "your-password"
+  vcli vault reshare --plugin vultisig-fees-feee --password "your-password"
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actualPassword := password
@@ -113,7 +114,7 @@ Example:
 
 	cmd.Flags().StringVar(&pluginID, "plugin", "", "Plugin ID or alias (required)")
 	cmd.Flags().StringVarP(&verifierURL, "verifier", "v", "http://localhost:8080", "Verifier server URL")
-	cmd.Flags().StringVarP(&password, "password", "p", "", "Fast Vault password (or set VAULT_PASSWORD)")
+	cmd.Flags().StringVar(&password, "password", "", "Fast Vault password (or set VAULT_PASSWORD)")
 	cmd.MarkFlagRequired("plugin")
 
 	return cmd
@@ -137,14 +138,14 @@ For ECDSA signing (default), provide a derive path like "m/44'/60'/0'/0/0" for E
 For EdDSA signing, use --eddsa flag (no derive path needed).
 
 Environment variables:
-  VAULT_PASSWORD  - Fast Vault password (or use -p flag)
+  VAULT_PASSWORD  - Fast Vault password (or use --password flag)
 
 Example:
   # Sign an Ethereum transaction hash (ECDSA)
-  vcli vault keysign --message "abcd1234..." --derive "m/44'/60'/0'/0/0" -p "vault-password"
+  vcli vault keysign --message "abcd1234..." --derive "m/44'/60'/0'/0/0" --password "vault-password"
 
   # Sign a Solana message (EdDSA)
-  vcli vault keysign --message "abcd1234..." --eddsa -p "vault-password"
+  vcli vault keysign --message "abcd1234..." --eddsa --password "vault-password"
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actualPassword := vaultPassword
@@ -152,7 +153,7 @@ Example:
 				actualPassword = envPass
 			}
 			if actualPassword == "" {
-				return fmt.Errorf("password required: use -p or set VAULT_PASSWORD")
+				return fmt.Errorf("password required: use --password or set VAULT_PASSWORD")
 			}
 			return runVaultKeysign(message, derivePath, isEdDSA, actualPassword)
 		},
@@ -161,7 +162,7 @@ Example:
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Hex-encoded message hash to sign (required)")
 	cmd.Flags().StringVarP(&derivePath, "derive", "d", "m/44'/60'/0'/0/0", "BIP44 derivation path (for ECDSA)")
 	cmd.Flags().BoolVar(&isEdDSA, "eddsa", false, "Use EdDSA signing (for Solana, etc.)")
-	cmd.Flags().StringVarP(&vaultPassword, "password", "p", "", "Fast Vault password (or set VAULT_PASSWORD)")
+	cmd.Flags().StringVar(&vaultPassword, "password", "", "Fast Vault password (or set VAULT_PASSWORD)")
 	cmd.MarkFlagRequired("message")
 
 	return cmd
@@ -190,7 +191,6 @@ func newVaultListCmd() *cobra.Command {
 func newVaultImportCmd() *cobra.Command {
 	var file string
 	var password string
-	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "import",
@@ -201,16 +201,19 @@ The file should be a vault backup exported from the Vultisig mobile app or exten
 If the vault is encrypted, you will be prompted for the password interactively,
 or you can provide it with --password (be careful with special characters in shells).
 
+Importing always overwrites any existing vault.
+
+DEFAULT LOCATION:
+  If no --file is specified, looks for a .vult file in local/keyshares/
+  Put your vault backup there for easy importing.
+
 Environment variables (override flags):
   VAULT_PATH      - Path to vault file
   VAULT_PASSWORD  - Decryption password
 
-Use --force to overwrite any existing vault (useful after plugin uninstall).
-
 Example:
-  vcli vault import --file ~/Downloads/MyVault.vult
+  vcli vault import --password "your-password"                    # Uses file from local/keyshares/
   vcli vault import --file ~/Downloads/MyVault.vult --password "your-password"
-  VAULT_PATH=/path/to/vault.vult VAULT_PASSWORD=secret vcli vault import --force
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actualFile := file
@@ -218,7 +221,14 @@ Example:
 				actualFile = envPath
 			}
 			if actualFile == "" {
-				return fmt.Errorf("vault file required: use --file or set VAULT_PATH")
+				var err error
+				actualFile, err = findVaultInKeyshares()
+				if err != nil {
+					return err
+				}
+			}
+			if actualFile == "" {
+				return fmt.Errorf("no vault file found. Put a .vult file in local/keyshares/ or use --file")
 			}
 
 			actualPassword := password
@@ -232,15 +242,55 @@ Example:
 					return err
 				}
 			}
-			return runVaultImport(actualFile, actualPassword, force)
+			return runVaultImport(actualFile, actualPassword)
 		},
 	}
 
-	cmd.Flags().StringVarP(&file, "file", "f", "", "Vault file to import (or set VAULT_PATH env var)")
-	cmd.Flags().StringVarP(&password, "password", "p", "", "Decryption password (or set VAULT_PASSWORD env var)")
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing vault")
+	cmd.Flags().StringVar(&file, "file", "", "Vault file (default: looks in local/keyshares/)")
+	cmd.Flags().StringVar(&password, "password", "", "Decryption password (or set VAULT_PASSWORD env var)")
 
 	return cmd
+}
+
+func findVaultInKeyshares() (string, error) {
+	paths := []string{
+		"local/keyshares",
+		"keyshares",
+	}
+
+	var vaultFiles []string
+	var searchDir string
+
+	for _, dir := range paths {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		searchDir = dir
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".vult") {
+				vaultFiles = append(vaultFiles, filepath.Join(dir, entry.Name()))
+			}
+		}
+		if len(vaultFiles) > 0 {
+			break
+		}
+	}
+
+	if len(vaultFiles) == 0 {
+		return "", nil
+	}
+
+	if len(vaultFiles) == 1 {
+		return vaultFiles[0], nil
+	}
+
+	// Multiple files - list them and ask user to specify
+	fmt.Printf("Multiple vault files found in %s/:\n", searchDir)
+	for _, f := range vaultFiles {
+		fmt.Printf("  - %s\n", filepath.Base(f))
+	}
+	return "", fmt.Errorf("multiple vault files found. Use --file to specify which one")
 }
 
 func newVaultExportCmd() *cobra.Command {
@@ -254,7 +304,7 @@ func newVaultExportCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&output, "output", "o", "", "Output file path")
+	cmd.Flags().StringVar(&output, "output", "", "Output file path")
 
 	return cmd
 }
@@ -537,22 +587,13 @@ func runVaultList() error {
 	return nil
 }
 
-func runVaultImport(file, password string, force bool) error {
+func runVaultImport(file, password string) error {
 	startTime := time.Now()
 
-	// Check for existing vault
+	// Always remove existing vaults to start fresh
 	existingVaults, _ := ListVaults()
-	if len(existingVaults) > 0 && !force {
-		existing := existingVaults[0]
-		if len(existing.Signers) > 2 {
-			fmt.Printf("Warning: Existing vault has %d signers (from plugin install).\n", len(existing.Signers))
-			fmt.Println("Use --force to overwrite with fresh 2-party vault.")
-			return fmt.Errorf("existing vault found with %d signers. Use --force to overwrite", len(existing.Signers))
-		}
-	}
-
-	if force && len(existingVaults) > 0 {
-		fmt.Println("Force mode: removing existing vault...")
+	if len(existingVaults) > 0 {
+		fmt.Println("Removing existing vault...")
 		vaultPath := VaultStoragePath()
 		os.RemoveAll(vaultPath)
 		os.MkdirAll(vaultPath, 0700)
@@ -696,7 +737,7 @@ func runVaultImport(file, password string, force bool) error {
 	fmt.Println("│                                                                 │")
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 	fmt.Println()
-	fmt.Println("Next: ./vcli plugin install <plugin-id> -p <password>")
+	fmt.Println("Next: ./vcli plugin install <plugin-id> --password <password>")
 
 	return nil
 }
@@ -1287,7 +1328,69 @@ func runVaultDetails(chainFilter string) error {
 			fmt.Printf("│ Bitcoin                                                         │\n")
 			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
 			fmt.Printf("│ Address: %s\n", btcAddr)
-			fmt.Printf("│ BTC: (use explorer to check balance)\n")
+			btcBal, balErr := getUTXOBalance("bitcoin", btcAddr)
+			if balErr != nil {
+				fmt.Printf("│ BTC: error fetching balance\n")
+			} else {
+				fmt.Printf("│ BTC: %s\n", formatBalance(btcBal, 8))
+			}
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// Litecoin
+	if chainFilter == "" || strings.EqualFold(chainFilter, "litecoin") || strings.EqualFold(chainFilter, "ltc") {
+		ltcAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.Litecoin)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ Litecoin                                                        │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", ltcAddr)
+			ltcBal, balErr := getUTXOBalance("litecoin", ltcAddr)
+			if balErr != nil {
+				fmt.Printf("│ LTC: error fetching balance\n")
+			} else {
+				fmt.Printf("│ LTC: %s\n", formatBalance(ltcBal, 8))
+			}
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// Bitcoin Cash
+	if chainFilter == "" || strings.EqualFold(chainFilter, "bitcoincash") || strings.EqualFold(chainFilter, "bch") {
+		bchAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.BitcoinCash)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ Bitcoin Cash                                                    │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", bchAddr)
+			bchBal, balErr := getUTXOBalance("bitcoin-cash", bchAddr)
+			if balErr != nil {
+				fmt.Printf("│ BCH: error fetching balance\n")
+			} else {
+				fmt.Printf("│ BCH: %s\n", formatBalance(bchBal, 8))
+			}
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// Dogecoin
+	if chainFilter == "" || strings.EqualFold(chainFilter, "dogecoin") || strings.EqualFold(chainFilter, "doge") {
+		dogeAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.Dogecoin)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ Dogecoin                                                        │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", dogeAddr)
+			dogeBal, balErr := getUTXOBalance("dogecoin", dogeAddr)
+			if balErr != nil {
+				fmt.Printf("│ DOGE: error fetching balance\n")
+			} else {
+				fmt.Printf("│ DOGE: %s\n", formatBalance(dogeBal, 8))
+			}
 			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
 			fmt.Println()
 		}
@@ -1498,4 +1601,48 @@ func getERC20Balance(rpcURL, tokenAddress, walletAddress string) (*big.Int, erro
 	balance.SetString(balanceHex, 16)
 
 	return balance, nil
+}
+
+const blockchairBaseURL = "https://api.vultisig.com/blockchair"
+
+func getUTXOBalance(chain, addr string) (*big.Int, error) {
+	url := fmt.Sprintf("%s/%s/dashboards/address/%s", blockchairBaseURL, chain, addr)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Data map[string]struct {
+			Address struct {
+				Balance int64 `json:"balance"`
+			} `json:"address"`
+		} `json:"data"`
+	}
+
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, data := range result.Data {
+		return big.NewInt(data.Address.Balance), nil
+	}
+
+	return big.NewInt(0), nil
 }

@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -41,7 +44,7 @@ Examples:
   vcli policy generate --from eth --to eth --amount 0.1 --vault Plugin1 --to-vault Plugin2
 
   # Output to file
-  vcli policy generate --from eth --to usdc --amount 0.01 -o swap.json
+  vcli policy generate --from eth --to usdc --amount 0.01 --output swap.json
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVaultName, output)
@@ -49,13 +52,13 @@ Examples:
 	}
 
 	cmd.Flags().StringVar(&pluginID, "plugin", "dca", "Plugin ID or alias")
-	cmd.Flags().StringVarP(&from, "from", "f", "", "Source asset (required)")
-	cmd.Flags().StringVarP(&to, "to", "t", "", "Destination asset (required)")
-	cmd.Flags().StringVarP(&amount, "amount", "a", "", "Amount in human units (required)")
+	cmd.Flags().StringVar(&from, "from", "", "Source asset (required)")
+	cmd.Flags().StringVar(&to, "to", "", "Destination asset (required)")
+	cmd.Flags().StringVar(&amount, "amount", "", "Amount in human units (required)")
 	cmd.Flags().StringVar(&frequency, "frequency", "one-time", "Frequency: one-time, minutely, hourly, daily, weekly, bi-weekly, monthly")
 	cmd.Flags().StringVar(&vaultName, "vault", "", "Source vault name (default: first vault)")
 	cmd.Flags().StringVar(&toVaultName, "to-vault", "", "Destination vault name for sends (default: same as --vault)")
-	cmd.Flags().StringVarP(&output, "output", "o", "", "Output file (default: stdout)")
+	cmd.Flags().StringVar(&output, "output", "", "Output file (default: stdout)")
 
 	cmd.MarkFlagRequired("from")
 	cmd.MarkFlagRequired("to")
@@ -99,7 +102,7 @@ func runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVault
 	amountSmallest := ConvertToSmallestUnit(amount, fromAsset)
 
 	// Build recipe
-	recipe := map[string]interface{}{
+	recipe := map[string]any{
 		"from": map[string]string{
 			"chain":   fromAsset.Chain,
 			"token":   fromAsset.Token,
@@ -114,9 +117,15 @@ func runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVault
 		"frequency":  frequency,
 	}
 
-	policy := map[string]interface{}{
+	// Validate recipe with plugin server
+	err = validateRecipeWithPlugin(pluginID, recipe)
+	if err != nil {
+		return fmt.Errorf("recipe validation failed: %w", err)
+	}
+
+	policy := map[string]any{
 		"recipe":  recipe,
-		"billing": []interface{}{},
+		"billing": []any{},
 	}
 
 	jsonBytes, err := json.MarshalIndent(policy, "", "  ")
@@ -166,4 +175,43 @@ func deriveAddressForChain(vault *LocalVault, chainName string) (string, error) 
 	}
 
 	return addr, nil
+}
+
+func validateRecipeWithPlugin(pluginID string, recipe map[string]any) error {
+	pluginServerURL, err := GetPluginServerURL(pluginID)
+	if err != nil {
+		return fmt.Errorf("get plugin server URL: %w", err)
+	}
+
+	reqBody, err := json.Marshal(map[string]any{
+		"configuration": recipe,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	resp, err := http.Post(pluginServerURL+"/plugin/recipe-specification/suggest", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s", extractErrorMessage(body))
+	}
+
+	return nil
+}
+
+func extractErrorMessage(body []byte) string {
+	var resp map[string]any
+	err := json.Unmarshal(body, &resp)
+	if err != nil {
+		return string(body)
+	}
+	if msg, ok := resp["message"].(string); ok {
+		return msg
+	}
+	return string(body)
 }

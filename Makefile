@@ -1,6 +1,6 @@
 .PHONY: help init plan apply destroy cluster-setup deploy-all deploy-infra deploy-services test clean
-.PHONY: deploy-k8s deploy-k8s-prod
-.PHONY: local-build local-start local-stop local-status local-logs
+.PHONY: deploy-k8s deploy-k8s-prod k8s-status
+.PHONY: build start stop status logs
 
 TERRAFORM_DIR := infrastructure/terraform
 KUBECONFIG := $(shell pwd)/.kube/config
@@ -10,11 +10,14 @@ help:
 	@echo "Vultisig Cluster Management"
 	@echo ""
 	@echo "Local Development:"
-	@echo "  local-build       Build vcli"
-	@echo "  local-start       Start all local services"
-	@echo "  local-stop        Stop all services and clean all state"
-	@echo "  local-status      Show local service status"
-	@echo "  local-logs        Tail all local logs"
+	@echo "  build             Build vcli"
+	@echo "  start             Start services (default: --mode dev)"
+	@echo "                      --mode local  All services local"
+	@echo "                      --mode dev    Relay+Vultiserver production, rest local"
+	@echo "                      --mode prod   All production endpoints"
+	@echo "  stop              Stop all services and clean all state"
+	@echo "  status            Show service status"
+	@echo "  logs              Tail all logs"
 	@echo ""
 	@echo "Infrastructure (Cloud):"
 	@echo "  init              Initialize Terraform"
@@ -198,7 +201,7 @@ port-forward:
 	@echo "Press Ctrl+C to stop all port forwards"
 	@wait
 
-status:
+k8s-status:
 	@echo "=== Cluster Status ==="
 	@echo ""
 	@echo "Nodes:"
@@ -219,41 +222,42 @@ clean:
 # ============== Local Development ==============
 # Note: vcli.sh wrapper auto-sets DYLD_LIBRARY_PATH from cluster.yaml
 
-local-build:
+build:
 	@echo "Building vcli..."
 	cd local && go build -o vcli ./cmd/vcli
 	@echo "Built: local/vcli"
-	@echo "Use ./local/vcli.sh (wrapper) or make local-* commands"
+	@echo "Use ./local/vcli.sh (wrapper) or make start/stop/status"
 
-local-start: local-build
+# Start services. Default mode is 'dev' (relay+vultiserver production, rest local)
+# Usage: make start [MODE=local|dev|prod]
+start: build
 	@if [ ! -f local/cluster.yaml ]; then \
 		echo "ERROR: local/cluster.yaml not found"; \
-		echo "Copy cluster.yaml.example and configure your paths:"; \
-		echo "  cp local/cluster.yaml.example local/cluster.yaml"; \
+		echo "This file should exist in the repo. Try: git checkout local/cluster.yaml"; \
 		exit 1; \
 	fi
-	$(VCLI) start
+	$(VCLI) start --mode $(or $(MODE),dev)
 
-local-stop:
+stop:
 	@if [ -f ./local/vcli ]; then \
 		$(VCLI) stop; \
 	else \
 		echo "vcli not built, stopping docker only..."; \
 	fi
 	@echo "Cleaning up all state..."
-	@docker compose -f local/configs/docker-compose.yaml down -v 2>/dev/null || true
+	@docker compose -f local/docker-compose.yaml down -v 2>/dev/null || true
 	@rm -f /tmp/verifier.log /tmp/worker.log /tmp/dca.log /tmp/dca-worker.log /tmp/dca-scheduler.log 2>/dev/null || true
 	@rm -rf ~/.vultisig/vaults/ 2>/dev/null || true
 	@echo "Stopped and cleaned."
 
-local-status:
+status:
 	@if [ -f ./local/vcli ]; then \
 		$(VCLI) status; \
 	else \
-		echo "vcli not built. Run: make local-build"; \
+		echo "vcli not built. Run: make build"; \
 	fi
 
-local-logs:
+logs:
 	@echo "=== Verifier ===" && tail -20 /tmp/verifier.log 2>/dev/null || echo "(not running)"
 	@echo ""
 	@echo "=== Worker ===" && tail -20 /tmp/worker.log 2>/dev/null || echo "(not running)"

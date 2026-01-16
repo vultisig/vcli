@@ -18,15 +18,10 @@ setup-env.sh
 # Local development
 local/vcli
 local/devctl
-local/cluster.yaml
-local/vault.env
-local/configs/vault.env
-local/configs/docker-compose.yaml
 
 # Vault keyshare files (sensitive - never commit)
 *.vult
-local/*.vult
-local/configs/*.vult
+!local/keyshares/.gitkeep
 
 # Root-level test files (generated)
 /test-*.json

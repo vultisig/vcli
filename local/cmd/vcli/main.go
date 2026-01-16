@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/vultisig/vultisig-cluster/local/cmd/vcli/cmd"
+	"github.com/vultisig/vcli/local/cmd/vcli/cmd"
 )
 
 func main() {
@@ -32,17 +32,17 @@ ENVIRONMENT VARIABLES:
   Tip: Put these in local/vault.env - vcli.sh auto-loads it!
 
 QUICK START:
-  1. vcli start                              # Start services
-  2. vcli vault import -f vault.vult -p xxx  # Import vault
-  3. vcli plugin install dca -p xxx          # Install plugin (4-party TSS)
-  4. vcli policy add --plugin dca -c policy.json -p xxx
-  5. vcli report                             # Check status
-  6. vcli stop                               # Stop services
+  1. vcli start                                                      # Start services
+  2. vcli vault import --file vault.vult --password xxx              # Import vault
+  3. vcli plugin install dca --password xxx                          # Install plugin (4-party TSS)
+  4. vcli policy add --plugin dca --policy-file policy.json --password xxx
+  5. vcli report                                                     # Check status
+  6. vcli stop                                                       # Stop services
 
 FLAG CONVENTIONS:
-  -p, --password  = Vault/Fast Vault password (all commands)
-  --plugin        = Plugin ID or alias (no -p short flag!)
-  -c, --config    = Config file path
+  --password  = Vault/Fast Vault password (all commands)
+  --plugin    = Plugin ID or alias
+  -c, --policy-file    = Config file path
 
 Commands:
   start    - Start all local development services

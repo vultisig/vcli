@@ -128,7 +128,7 @@ Note: Requires authentication. Run 'vcli vault import' first.
 		},
 	}
 
-	cmd.Flags().StringVarP(&password, "password", "p", "", "Fast Vault password (or set VAULT_PASSWORD env var)")
+	cmd.Flags().StringVar(&password, "password", "", "Fast Vault password (or set VAULT_PASSWORD env var)")
 
 	return cmd
 }
@@ -375,7 +375,7 @@ func runPluginInstall(pluginIDOrAlias string, password string) error {
 	fmt.Println("│                                                                 │")
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 	fmt.Println()
-	fmt.Println("Next: ./vcli policy add --plugin", pluginID, "--config policy.json -p <password>")
+	fmt.Println("Next: ./vcli policy add --plugin", pluginID, "--policy-file policy.json --password <password>")
 
 	return nil
 }

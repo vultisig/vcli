@@ -1,4 +1,4 @@
-module github.com/vultisig/vultisig-cluster/local
+module github.com/vultisig/vcli/local
 
 go 1.25
 
@@ -10,8 +10,8 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/vultisig/commondata v0.0.0-20251125054425-71e1e8231dd3
-	github.com/vultisig/recipes v0.0.0-20260114093150-904c0eefd906
-	github.com/vultisig/verifier v0.0.0
+	github.com/vultisig/recipes v0.0.0-20260115094915-a341566fd1e4
+	github.com/vultisig/verifier v0.0.0-20260116014220-9557a72dfce8
 	github.com/vultisig/vultiserver v0.0.0-20250825042420-c6e6ac281110
 	github.com/vultisig/vultisig-go v0.0.0-20260114092710-6c38516a0c85
 	golang.org/x/term v0.34.0
@@ -183,7 +183,7 @@ require (
 	github.com/ulikunitz/xz v0.5.12 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
-	github.com/vultisig/go-wrappers v0.0.0-20260107003906-5ecb936992f7 // indirect
+	github.com/vultisig/go-wrappers v0.0.0-20260116015747-e12e4d06cf57 // indirect
 	github.com/vultisig/mobile-tss-lib v0.0.0-20250316003201-2e7e570a4a74 // indirect
 	github.com/xyield/xrpl-go v0.0.0-20230914223425-9abe75c05830 // indirect
 	go.etcd.io/bbolt v1.4.0-alpha.0.0.20240404170359-43604f3112c5 // indirect
@@ -207,13 +207,6 @@ require (
 	lukechampine.com/blake3 v1.2.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
-)
-
-// Local development - point to sibling repos
-replace (
-	github.com/vultisig/app-recurring => ../../app-recurring
-	github.com/vultisig/verifier => ../../verifier
-	github.com/vultisig/vultiserver => ../../vultiserver
 )
 
 // Required dependency fixes (same as verifier)
