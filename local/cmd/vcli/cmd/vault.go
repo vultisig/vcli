@@ -737,8 +737,7 @@ func runVaultImport(file, password string) error {
 	fmt.Println("│                                                                 │")
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 	fmt.Println()
-	fmt.Println("Next: ./vcli vault details                    # View addresses and balances")
-	fmt.Println("      ./vcli plugin install <plugin-id> -p   # Install a plugin")
+	fmt.Println("Next: vcli vault details                    # View addresses and balances")
 
 	return nil
 }

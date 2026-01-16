@@ -9,11 +9,14 @@ Vultisig CLI - Local development environment for testing Vultisig plugins with D
 **You MUST follow the E2E testing flow exactly as documented below.** The flow is:
 
 ```
-START → IMPORT → INSTALL → [ GENERATE → ADD → MONITOR ] → [ repeat for more policies ]
-                                ↑_________________↲
+START → IMPORT → DETAILS → INSTALL → [ GENERATE → ADD → MONITOR ] → [ repeat for more policies ]
+                ↓                                                              ↑_________________↲
+         (view addresses)
 ```
 
 The bracketed steps (policy testing) can be repeated as many times as needed. Everything else runs once per test cycle. When completely done testing, proceed to cleanup (DELETE → UNINSTALL → STOP).
+
+**After IMPORT:** Run `vcli vault details` to view your wallet addresses and balances before proceeding to INSTALL.
 
 **Do NOT:**
 - Restart mid-way through a test cycle
@@ -150,6 +153,8 @@ Import your vault into the local environment.
 - `report` displays vault name, public keys (ECDSA/EdDSA), and signers
 
 ❌ **If validation fails:** Verify your `.vult` file is in `local/keyshares/` and password is correct. The vault must be a Fast Vault.
+
+**Next step:** Run `vcli vault details` to view your wallet addresses and balances before proceeding.
 
 **Inspect your vault (recommended for first-time users):**
 
