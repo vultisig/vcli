@@ -340,8 +340,14 @@ func runPluginInstall(pluginIDOrAlias string, password string) error {
 	fmt.Println("│ PLUGIN INSTALL COMPLETE                                         │")
 	fmt.Println("├─────────────────────────────────────────────────────────────────┤")
 	fmt.Println("│                                                                 │")
+	fmt.Printf("│  Plugin:     %-50s │\n", pluginID)
+	fmt.Printf("│  Vault:      %-50s │\n", vault.PublicKeyECDSA[:16]+"...")
+	fmt.Println("│                                                                 │")
+	fmt.Println("│  Summary:                                                      │")
+	fmt.Printf("│    Threshold: %-47s │\n", fmt.Sprintf("%d-of-%d", 2, len(newVault.Signers)))
+	fmt.Printf("│    Parties:   %-47d │\n", len(newVault.Signers))
+	fmt.Println("│                                                                 │")
 	fmt.Println("│  TSS Reshare:                                                   │")
-	fmt.Printf("│    Parties:   %-50s │\n", fmt.Sprintf("%d (2→4 threshold)", len(newVault.Signers)))
 	for i, signer := range newVault.Signers {
 		role := getSignerRole(signer, vault.LocalPartyID)
 		signerDisplay := signer
