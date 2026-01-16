@@ -230,7 +230,7 @@ func runVerifyHealth() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	fmt.Println("Checking service health...\n")
+	fmt.Println("Checking service health...")
 
 	services := []struct {
 		name string

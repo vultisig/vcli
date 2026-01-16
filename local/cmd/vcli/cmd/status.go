@@ -26,7 +26,7 @@ func runStatus() error {
 	}
 
 	fmt.Println("Service Status")
-	fmt.Println("==============\n")
+	fmt.Println("==============")
 
 	services := []struct {
 		name string
