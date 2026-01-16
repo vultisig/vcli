@@ -1,6 +1,6 @@
-# Vultisig Cluster
+# vcli
 
-Local development environment for testing Vultisig plugins with Docker-based infrastructure.
+Vultisig CLI - Local development environment for testing Vultisig plugins with Docker-based infrastructure.
 
 ---
 
@@ -40,7 +40,7 @@ Clone all required repositories into the same parent directory:
 mkdir -p ~/dev/vultisig && cd ~/dev/vultisig
 
 # This repo
-git clone https://github.com/vultisig/vultisig-cluster.git
+git clone https://github.com/vultisig/vcli.git
 
 # Required dependencies
 git clone https://github.com/vultisig/verifier.git
@@ -77,7 +77,7 @@ You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig m
 ## Initial Setup (One-Time)
 
 ```bash
-cd vultisig-cluster
+cd vcli
 
 # 1. Put your vault file in the keyshares directory
 cp ~/Downloads/MyVault.vult local/keyshares/
@@ -439,7 +439,7 @@ make logs                   # Tail all logs
 ## Directory Structure
 
 ```
-vultisig-cluster/
+vcli/
 ├── local/
 │   ├── cmd/vcli/             # vcli source code
 │   ├── scripts/              # Shell scripts (vcli.sh)

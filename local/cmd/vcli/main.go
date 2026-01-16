@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/vultisig/vultisig-cluster/local/cmd/vcli/cmd"
+	"github.com/vultisig/vcli/local/cmd/vcli/cmd"
 )
 
 func main() {
