@@ -154,6 +154,12 @@ func runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVault
 	fmt.Fprintf(os.Stderr, "  Amount: %s (smallest unit)\n", amountSmallest)
 	fmt.Fprintf(os.Stderr, "  Frequency: %s\n", frequency)
 
+	// Print next step
+	if output != "" {
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintf(os.Stderr, "Next: vcli policy add --plugin %s --policy-file %s --password <password>\n", pluginID, output)
+	}
+
 	return nil
 }
 

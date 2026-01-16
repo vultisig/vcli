@@ -435,8 +435,10 @@ func runPolicyAdd(pluginID, configFile string, password string) error {
 	fmt.Println("│                                                                 │")
 	fmt.Printf("│  Plugin:      %-50s │\n", pluginID)
 	fmt.Printf("│  Vault:       %-50s │\n", vault.PublicKeyECDSA[:16]+"...")
+	var policyID string
 	if data, ok := result["data"].(map[string]interface{}); ok {
 		if id, ok := data["id"].(string); ok {
+			policyID = id
 			fmt.Printf("│  Policy ID:   %-50s │\n", id)
 		}
 	}
@@ -445,6 +447,10 @@ func runPolicyAdd(pluginID, configFile string, password string) error {
 	fmt.Printf("│  Total Time:  %-50s │\n", totalDuration.Round(time.Millisecond).String())
 	fmt.Println("│                                                                 │")
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
+	fmt.Println()
+	if policyID != "" {
+		fmt.Printf("Next: vcli policy status %s\n", policyID)
+	}
 
 	return nil
 }
@@ -755,6 +761,9 @@ func runPolicyDelete(policyID, password string) error {
 	fmt.Printf("│  Policy ID: %-52s │\n", policyID)
 	fmt.Printf("│  Duration:  %-52s │\n", totalDuration.Round(time.Millisecond))
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
+	fmt.Println()
+	fmt.Println("Next: vcli policy list --plugin <plugin-id>   # Check remaining policies")
+	fmt.Println("      vcli plugin uninstall <plugin-id>       # When done testing")
 
 	return nil
 }

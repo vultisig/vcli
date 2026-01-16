@@ -462,10 +462,7 @@ func printStartupSummary(elapsed time.Duration, skipDCA bool, config *ClusterCon
 	fmt.Println()
 	fmt.Printf("%sReady for vault import!%s\n", colorGreen, colorReset)
 	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Println("  vcli vault import --file <vault.vult> --password <password>")
-	fmt.Println("  vcli plugin install <plugin-id> --password <password>")
-	fmt.Println()
+	fmt.Println("Next: vcli vault import --password <password>")
 }
 
 func printServiceLine(name, pidFile, port string) {
