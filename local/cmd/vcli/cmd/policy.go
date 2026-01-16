@@ -427,6 +427,37 @@ func runPolicyAdd(pluginID, configFile string, password string) error {
 
 	totalDuration := time.Since(startTime)
 
+	// Extract recipe summary
+	var fromChain, fromToken, fromAmount, toChain, toToken, frequency string
+	if from, ok := recipeConfig["from"].(map[string]interface{}); ok {
+		if c, ok := from["chain"].(string); ok {
+			fromChain = c
+		}
+		if t, ok := from["token"].(string); ok && t != "" {
+			fromToken = t
+		} else {
+			fromToken = "native"
+		}
+	}
+	if to, ok := recipeConfig["to"].(map[string]interface{}); ok {
+		if c, ok := to["chain"].(string); ok {
+			toChain = c
+		}
+		if t, ok := to["token"].(string); ok && t != "" {
+			toToken = t
+		} else {
+			toToken = "native"
+		}
+	}
+	if amt, ok := recipeConfig["fromAmount"].(string); ok {
+		fromAmount = amt
+	}
+	if freq, ok := recipeConfig["frequency"].(string); ok {
+		frequency = freq
+	} else {
+		frequency = "one-time"
+	}
+
 	// Print completion report
 	fmt.Println()
 	fmt.Println("┌─────────────────────────────────────────────────────────────────┐")
@@ -442,9 +473,21 @@ func runPolicyAdd(pluginID, configFile string, password string) error {
 			fmt.Printf("│  Policy ID:   %-50s │\n", id)
 		}
 	}
-	fmt.Printf("│  Rules:       %-50d │\n", len(policySuggest.GetRules()))
 	fmt.Println("│                                                                 │")
-	fmt.Printf("│  Total Time:  %-50s │\n", totalDuration.Round(time.Millisecond).String())
+	fmt.Println("│  Summary:                                                      │")
+	if fromChain != "" {
+		fmt.Printf("│    From:      %-47s │\n", fmt.Sprintf("%s (%s)", fromToken, fromChain))
+	}
+	if toChain != "" {
+		fmt.Printf("│    To:        %-47s │\n", fmt.Sprintf("%s (%s)", toToken, toChain))
+	}
+	if fromAmount != "" {
+		fmt.Printf("│    Amount:    %-47s │\n", fromAmount)
+	}
+	fmt.Printf("│    Frequency: %-47s │\n", frequency)
+	fmt.Printf("│    Rules:     %-47d │\n", len(policySuggest.GetRules()))
+	fmt.Println("│                                                                 │")
+	fmt.Printf("│  Duration:   %-50s │\n", totalDuration.Round(time.Millisecond).String())
 	fmt.Println("│                                                                 │")
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 	fmt.Println()
