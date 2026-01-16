@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -14,12 +13,18 @@ func NewServicesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "services",
 		Short: "Manage local development services",
+		Long: `Manage local development services running in Docker.
+
+All services run as Docker containers. Use 'vcli start' for the recommended
+way to start all services. This command provides more granular control.
+`,
 	}
 
 	cmd.AddCommand(newServicesStartCmd())
 	cmd.AddCommand(newServicesStopCmd())
 	cmd.AddCommand(newServicesLogsCmd())
 	cmd.AddCommand(newServicesInitCmd())
+	cmd.AddCommand(newServicesStatusCmd())
 
 	return cmd
 }
@@ -33,8 +38,9 @@ func newServicesInitCmd() *cobra.Command {
 This will:
 1. Start Docker infrastructure (postgres, redis, minio)
 2. Create required databases
-3. Run database migrations
-4. Seed initial plugin data
+3. Initialize MinIO buckets
+
+For a full setup including verifier and plugins, use 'vcli start' instead.
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServicesInit()
@@ -49,22 +55,22 @@ func newServicesStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start services",
-		Long: `Start local development services.
+		Long: `Start local development services (Docker containers).
 
 Available services:
   - infra: Docker infrastructure (postgres, redis, minio)
   - verifier: Verifier API server
   - worker: Verifier worker
-  - fee: Fee plugin server
-  - dca: DCA plugin server
-  - dca-scheduler: DCA scheduler
+  - dca-server: DCA plugin server
   - dca-worker: DCA worker
+  - dca-scheduler: DCA scheduler
+  - dca-tx-indexer: DCA transaction indexer
 
-Use --all to start all services.
+Use --all to start all services, or use 'vcli start' for the recommended setup.
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all {
-				services = []string{"infra", "verifier", "worker", "fee"}
+				services = []string{"postgres", "redis", "minio", "minio-init", "verifier", "worker", "dca-server", "dca-worker", "dca-scheduler", "dca-tx-indexer"}
 			}
 			return runServicesStart(services)
 		},
@@ -82,6 +88,10 @@ func newServicesStopCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop services",
+		Long: `Stop local development services (Docker containers).
+
+Use --all to stop all services including infrastructure.
+`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServicesStop(all)
 		},
@@ -99,32 +109,50 @@ func newServicesLogsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs",
 		Short: "View service logs",
+		Long: `View logs for Docker containers.
+
+Examples:
+  vcli services logs -s verifier
+  vcli services logs -s verifier -f
+  vcli services logs  # all services
+`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServicesLogs(service, follow)
 		},
 	}
 
-	cmd.Flags().StringVarP(&service, "service", "s", "", "Service name")
+	cmd.Flags().StringVarP(&service, "service", "s", "", "Service name (container name without vultisig- prefix)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output")
 
 	return cmd
 }
 
+func newServicesStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show status of all services",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServicesStatus()
+		},
+	}
+}
+
 func runServicesInit() error {
 	fmt.Println("Initializing local development environment...")
 
-	verifierRoot := findVerifierRoot()
-	if verifierRoot == "" {
-		return fmt.Errorf("could not find verifier root directory")
+	localDir := findLocalDir()
+	composeFile := filepath.Join(localDir, "docker-compose.full.yaml")
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		composeFile = filepath.Join(localDir, "docker-compose.yaml")
 	}
 
-	composeFile := filepath.Join(verifierRoot, "devenv", "docker-compose.yaml")
 	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
-		return fmt.Errorf("docker-compose.yaml not found at %s", composeFile)
+		return fmt.Errorf("docker-compose.yaml not found at %s", localDir)
 	}
 
 	fmt.Println("\n1. Starting Docker infrastructure...")
-	cmd := exec.Command("docker", "compose", "-f", composeFile, "up", "-d")
+	// Start only infrastructure services
+	cmd := exec.Command("docker", "compose", "-f", composeFile, "up", "-d", "postgres", "redis", "minio", "minio-init")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
@@ -140,10 +168,8 @@ func runServicesInit() error {
 
 	fmt.Println("\n3. Infrastructure ready!")
 	fmt.Println("\nNext steps:")
-	fmt.Println("  1. Start verifier: vcli services start -s verifier")
-	fmt.Println("  2. Start worker: vcli services start -s worker")
-	fmt.Println("  3. Start fee plugin: vcli services start -s fee")
-	fmt.Println("  4. Or start all: vcli services start --all")
+	fmt.Println("  vcli start                  # Start all services (recommended)")
+	fmt.Println("  vcli services start --all   # Or start services individually")
 
 	return nil
 }
@@ -151,103 +177,61 @@ func runServicesInit() error {
 func runServicesStart(services []string) error {
 	if len(services) == 0 {
 		fmt.Println("No services specified. Use -s to specify services or --all to start all.")
-		fmt.Println("\nAvailable services: infra, verifier, worker, fee, dca, dca-scheduler, dca-worker")
+		fmt.Println("\nAvailable services: postgres, redis, minio, verifier, worker, dca-server, dca-worker, dca-scheduler, dca-tx-indexer")
+		fmt.Println("\nOr use 'vcli start' to start everything (recommended).")
 		return nil
 	}
 
-	verifierRoot := findVerifierRoot()
-	feeRoot := findServiceRoot("feeplugin")
-	dcaRoot := findServiceRoot("app-recurring")
-
-	dyldPath := os.Getenv("DYLD_LIBRARY_PATH")
-	goWrappersPath := "/Users/dev/dev/vultisig/go-wrappers/includes/darwin/"
-	if !strings.Contains(dyldPath, goWrappersPath) {
-		dyldPath = goWrappersPath + ":" + dyldPath
+	localDir := findLocalDir()
+	composeFile := filepath.Join(localDir, "docker-compose.full.yaml")
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		composeFile = filepath.Join(localDir, "docker-compose.yaml")
 	}
 
-	for _, svc := range services {
-		fmt.Printf("Starting %s...\n", svc)
-
-		switch svc {
-		case "infra":
-			composeFile := filepath.Join(verifierRoot, "devenv", "docker-compose.yaml")
-			cmd := exec.Command("docker", "compose", "-f", composeFile, "up", "-d")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			err := cmd.Run()
-			if err != nil {
-				fmt.Printf("  Error: %v\n", err)
-			}
-
-		case "verifier":
-			fmt.Printf("  cd %s && VS_CONFIG_NAME=devenv/config/verifier go run cmd/verifier/main.go\n", verifierRoot)
-			fmt.Println("  [Run in separate terminal with DYLD_LIBRARY_PATH set]")
-
-		case "worker":
-			fmt.Printf("  cd %s && VS_WORKER_CONFIG_NAME=devenv/config/worker go run cmd/worker/main.go\n", verifierRoot)
-			fmt.Println("  [Run in separate terminal with DYLD_LIBRARY_PATH set]")
-
-		case "fee":
-			if feeRoot != "" {
-				fmt.Printf("  cd %s && VS_CONFIG_NAME=../verifier/devenv/config/fee-server go run cmd/server/main.go\n", feeRoot)
-			} else {
-				fmt.Println("  Fee plugin root not found")
-			}
-
-		case "dca", "dca-server":
-			if dcaRoot != "" {
-				fmt.Printf("  cd %s && [configure env] go run cmd/server/main.go\n", dcaRoot)
-			} else {
-				fmt.Println("  DCA plugin root not found")
-			}
-
-		case "dca-scheduler":
-			if dcaRoot != "" {
-				fmt.Printf("  cd %s && [configure env] go run cmd/scheduler/main.go\n", dcaRoot)
-			}
-
-		case "dca-worker":
-			if dcaRoot != "" {
-				fmt.Printf("  cd %s && [configure env] go run cmd/worker/main.go\n", dcaRoot)
-			}
-
-		default:
-			fmt.Printf("  Unknown service: %s\n", svc)
-		}
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		return fmt.Errorf("docker-compose.yaml not found at %s", localDir)
 	}
 
-	fmt.Println("\nNote: Set DYLD_LIBRARY_PATH before running Go services:")
-	fmt.Printf("  export DYLD_LIBRARY_PATH=%s:$DYLD_LIBRARY_PATH\n", goWrappersPath)
+	fmt.Printf("Starting services: %v\n", services)
 
+	args := []string{"compose", "-f", composeFile, "up", "-d"}
+	args = append(args, services...)
+
+	cmd := exec.Command("docker", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to start services: %w", err)
+	}
+
+	fmt.Println("\nServices started. View logs with: vcli services logs -s <service>")
 	return nil
 }
 
 func runServicesStop(all bool) error {
-	verifierRoot := findVerifierRoot()
+	localDir := findLocalDir()
+	composeFile := filepath.Join(localDir, "docker-compose.full.yaml")
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		composeFile = filepath.Join(localDir, "docker-compose.yaml")
+	}
 
 	if all {
 		fmt.Println("Stopping all services...")
-
-		fmt.Println("Stopping Go processes...")
-		exec.Command("pkill", "-f", "go run cmd/verifier").Run()
-		exec.Command("pkill", "-f", "go run cmd/worker").Run()
-		exec.Command("pkill", "-f", "go run cmd/server").Run()
-		exec.Command("pkill", "-f", "go run cmd/scheduler").Run()
-
-		if verifierRoot != "" {
-			composeFile := filepath.Join(verifierRoot, "devenv", "docker-compose.yaml")
-			fmt.Println("Stopping Docker infrastructure...")
-			cmd := exec.Command("docker", "compose", "-f", composeFile, "down")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			cmd.Run()
-		}
+		cmd := exec.Command("docker", "compose", "-f", composeFile, "down")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Run()
 	} else {
-		fmt.Println("Stopping Go processes...")
-		exec.Command("pkill", "-f", "go run cmd/verifier").Run()
-		exec.Command("pkill", "-f", "go run cmd/worker").Run()
-		exec.Command("pkill", "-f", "go run cmd/server").Run()
-		exec.Command("pkill", "-f", "go run cmd/scheduler").Run()
+		// Stop only application services, keep infrastructure
+		fmt.Println("Stopping application services (keeping infrastructure)...")
+		services := []string{"verifier", "worker", "dca-server", "dca-worker", "dca-scheduler", "dca-tx-indexer"}
+		args := []string{"compose", "-f", composeFile, "stop"}
+		args = append(args, services...)
+		cmd := exec.Command("docker", args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Run()
 		fmt.Println("Done. Use --all to also stop Docker infrastructure.")
 	}
 
@@ -255,8 +239,11 @@ func runServicesStop(all bool) error {
 }
 
 func runServicesLogs(service string, follow bool) error {
-	verifierRoot := findVerifierRoot()
-	composeFile := filepath.Join(verifierRoot, "devenv", "docker-compose.yaml")
+	localDir := findLocalDir()
+	composeFile := filepath.Join(localDir, "docker-compose.full.yaml")
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		composeFile = filepath.Join(localDir, "docker-compose.yaml")
+	}
 
 	args := []string{"compose", "-f", composeFile, "logs"}
 	if follow {
@@ -272,35 +259,18 @@ func runServicesLogs(service string, follow bool) error {
 	return cmd.Run()
 }
 
-func findVerifierRoot() string {
-	paths := []string{
-		"/Users/dev/dev/vultisig/verifier",
-		".",
-		"..",
+func runServicesStatus() error {
+	localDir := findLocalDir()
+	composeFile := filepath.Join(localDir, "docker-compose.full.yaml")
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		composeFile = filepath.Join(localDir, "docker-compose.yaml")
 	}
 
-	for _, p := range paths {
-		if _, err := os.Stat(filepath.Join(p, "cmd", "verifier")); err == nil {
-			abs, _ := filepath.Abs(p)
-			return abs
-		}
-	}
+	fmt.Println("Docker container status:")
+	fmt.Println()
 
-	return ""
-}
-
-func findServiceRoot(name string) string {
-	paths := []string{
-		"/Users/dev/dev/vultisig/" + name,
-		"../" + name,
-	}
-
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			abs, _ := filepath.Abs(p)
-			return abs
-		}
-	}
-
-	return ""
+	cmd := exec.Command("docker", "compose", "-f", composeFile, "ps", "--format", "table {{.Name}}\t{{.Status}}\t{{.Ports}}")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }

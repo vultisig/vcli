@@ -123,8 +123,7 @@ func (t *TSSService) Keygen(ctx context.Context, vaultName string) (*LocalVault,
 	t.logger.Info("[NOTE: This requires go-wrappers CGO library]")
 	t.logger.Info("The keygen protocol would execute here with the DKLS library")
 
-	t.logger.Info("For full TSS operation, ensure DYLD_LIBRARY_PATH is set:")
-	t.logger.Infof("export DYLD_LIBRARY_PATH=/Users/dev/dev/vultisig/go-wrappers/includes/darwin/:$DYLD_LIBRARY_PATH")
+	t.logger.Info("go-wrappers CGO libraries are automatically downloaded on first run")
 
 	err = t.relayClient.CompleteSession(sessionID, t.localPartyID)
 	if err != nil {

@@ -24,46 +24,44 @@ const (
 
 func NewStartCmd() *cobra.Command {
 	var skipDCA bool
-	var mode string
 
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start all local development services",
-		Long: `Start all local development services (stops existing first).
+		Long: `Start all local development services using Docker.
 
-MODES:
-  --mode local  All services run locally (relay, vultiserver, verifier, plugins)
-  --mode dev    Relay + Vultiserver use production endpoints, rest local (DEFAULT)
-  --mode prod   All services use production endpoints
-
-This command reads cluster.yaml to determine:
-- Which repos to use (paths configured per developer)
-- Which services to run locally vs use production endpoints
-- Port configurations
+All services run as Docker containers - no local repo clones needed.
 
 Services started:
-1. Docker infrastructure (PostgreSQL, Redis, MinIO)
-2. Verifier API server
-3. Verifier Worker
-4. DCA Plugin Server (if configured as local)
-5. DCA Plugin Worker
-6. DCA Scheduler
-7. DCA TX Indexer
+1. PostgreSQL (database)
+2. Redis (task queue)
+3. MinIO (object storage)
+4. Verifier API server
+5. Verifier Worker
+6. DCA Plugin Server
+7. DCA Plugin Worker
+8. DCA Scheduler
+9. DCA TX Indexer
 
-All services run in the background with logs in /tmp/*.log
+Prerequisites:
+- Docker must be installed and running
+- No local repo clones required
+
+Logs:
+- Use 'docker logs <container-name>' to view logs
+- Container names: vultisig-verifier, vultisig-worker, vultisig-dca, etc.
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStart(skipDCA, mode)
+			return runStart(skipDCA)
 		},
 	}
 
 	cmd.Flags().BoolVar(&skipDCA, "skip-dca", false, "Skip starting DCA plugin services")
-	cmd.Flags().StringVar(&mode, "mode", "dev", "Service mode: local, dev (default), prod")
 
 	return cmd
 }
 
-func runStart(skipDCA bool, mode string) error {
+func runStart(skipDCA bool) error {
 	startTime := time.Now()
 
 	fmt.Println("============================================")
@@ -71,286 +69,187 @@ func runStart(skipDCA bool, mode string) error {
 	fmt.Println("============================================")
 	fmt.Println()
 
-	config, err := LoadClusterConfig()
-	if err != nil {
-		return fmt.Errorf("load cluster config: %w", err)
-	}
-
-	// Apply mode to override service settings
-	config.ApplyMode(mode)
-	fmt.Printf("Mode: %s\n", mode)
-
-	err = config.ValidateRepos()
-	if err != nil {
-		return fmt.Errorf("validate repos: %w", err)
-	}
-
-	verifierRoot := config.Repos.Verifier
-	dcaRoot := config.Repos.DCA
+	// Find docker-compose file
 	localDir := findLocalDir()
-	configsDir := findConfigsDir()
-	dyldPath := config.GetDYLDPath()
+	composeFile := filepath.Join(localDir, "docker-compose.full.yaml")
 
-	fmt.Printf("Using config:\n")
-	fmt.Printf("  Verifier: %s\n", verifierRoot)
-	if config.IsLocal("dca") {
-		fmt.Printf("  DCA:      %s\n", dcaRoot)
+	// Fall back to basic docker-compose.yaml if full doesn't exist
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		composeFile = filepath.Join(localDir, "docker-compose.yaml")
 	}
-	fmt.Printf("  Relay:    %s\n", config.GetRelayURL())
-	fmt.Printf("  Vault:    %s\n", config.GetVultiserverURL())
+
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		return fmt.Errorf("docker-compose.yaml not found at %s\nRun from vcli/local/ directory or ensure docker-compose files exist", localDir)
+	}
+
+	fmt.Printf("Using: %s\n", composeFile)
 	fmt.Println()
 
-	// Step 0: Stop existing services
-	fmt.Printf("%s[0/8]%s Cleaning up existing processes...\n", colorYellow, colorReset)
-	runStop()
+	// Step 1: Stop existing containers
+	fmt.Printf("%s[1/4]%s Cleaning up existing containers...\n", colorYellow, colorReset)
+
+	downCmd := exec.Command("docker", "compose", "-f", composeFile, "down", "-v", "--remove-orphans")
+	downCmd.Stdout = os.Stdout
+	downCmd.Stderr = os.Stderr
+	downCmd.Run() // Ignore errors - containers might not exist
 	time.Sleep(2 * time.Second)
 	fmt.Printf("%s✓%s Cleanup complete\n", colorGreen, colorReset)
 
-	// Step 1: Start Docker infrastructure
+	// Step 2: Start all containers
 	fmt.Println()
-	fmt.Printf("%s[1/8]%s Starting Docker infrastructure...\n", colorYellow, colorReset)
+	fmt.Printf("%s[2/4]%s Starting Docker containers...\n", colorYellow, colorReset)
 
-	composeFile := filepath.Join(localDir, "docker-compose.yaml")
-	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
-		return fmt.Errorf("docker-compose.yaml not found at %s", composeFile)
+	// Build services list based on skipDCA flag
+	services := []string{"postgres", "redis", "minio", "minio-init", "verifier", "worker"}
+	if !skipDCA {
+		services = append(services, "dca-server", "dca-worker", "dca-scheduler", "dca-tx-indexer")
 	}
 
-	dockerCmd := exec.Command("docker", "compose", "-f", composeFile, "down", "-v", "--remove-orphans")
-	dockerCmd.Run()
-	time.Sleep(1 * time.Second)
+	upArgs := []string{"compose", "-f", composeFile, "up", "-d"}
+	upArgs = append(upArgs, services...)
 
-	dockerCmd = exec.Command("docker", "compose", "-f", composeFile, "up", "-d")
-	dockerCmd.Stdout = os.Stdout
-	dockerCmd.Stderr = os.Stderr
-	err = dockerCmd.Run()
+	upCmd := exec.Command("docker", upArgs...)
+	upCmd.Stdout = os.Stdout
+	upCmd.Stderr = os.Stderr
+	err := upCmd.Run()
 	if err != nil {
-		return fmt.Errorf("failed to start docker: %w", err)
+		return fmt.Errorf("failed to start docker containers: %w\nMake sure Docker is running and images are available", err)
 	}
+	fmt.Printf("%s✓%s Containers started\n", colorGreen, colorReset)
+
+	// Step 3: Wait for services to be healthy
+	fmt.Println()
+	fmt.Printf("%s[3/4]%s Waiting for services to be ready...\n", colorYellow, colorReset)
 
 	// Wait for PostgreSQL
-	fmt.Println("Waiting for PostgreSQL...")
-	time.Sleep(3 * time.Second)
-	for i := 0; i < 30; i++ {
-		checkCmd := exec.Command("docker", "exec", "vultisig-postgres", "pg_isready", "-U", "vultisig", "-d", "vultisig")
-		if checkCmd.Run() == nil {
-			break
-		}
-		time.Sleep(1 * time.Second)
+	fmt.Print("  PostgreSQL...")
+	if waitForDocker("vultisig-postgres", 30*time.Second) {
+		fmt.Printf(" %s✓%s\n", colorGreen, colorReset)
+	} else {
+		fmt.Printf(" %s✗%s (check: docker logs vultisig-postgres)\n", colorRed, colorReset)
 	}
-	fmt.Printf("%s✓%s PostgreSQL is ready\n", colorGreen, colorReset)
 
 	// Wait for Redis
-	fmt.Println("Waiting for Redis...")
-	for i := 0; i < 30; i++ {
-		checkCmd := exec.Command("docker", "exec", "vultisig-redis", "redis-cli", "-a", "vultisig", "ping")
-		if out, _ := checkCmd.Output(); strings.TrimSpace(string(out)) == "PONG" {
-			break
-		}
-		time.Sleep(1 * time.Second)
+	fmt.Print("  Redis...")
+	if waitForRedis(30 * time.Second) {
+		fmt.Printf(" %s✓%s\n", colorGreen, colorReset)
+	} else {
+		fmt.Printf(" %s✗%s (check: docker logs vultisig-redis)\n", colorRed, colorReset)
 	}
-	fmt.Printf("%s✓%s Redis is ready\n", colorGreen, colorReset)
 
 	// Wait for MinIO
-	fmt.Println("Waiting for MinIO...")
-	time.Sleep(2 * time.Second)
-	fmt.Printf("%s✓%s MinIO is ready\n", colorGreen, colorReset)
-
-	// Step 2: Start Verifier Server
-	fmt.Println()
-	fmt.Printf("%s[2/8]%s Starting Verifier Server...\n", colorYellow, colorReset)
-
-	verifierCmd := exec.Command("go", "run", "cmd/verifier/main.go")
-	verifierCmd.Dir = verifierRoot
-	verifierCmd.Env = append(os.Environ(),
-		"DYLD_LIBRARY_PATH="+dyldPath+":"+os.Getenv("DYLD_LIBRARY_PATH"),
-		"VS_VERIFIER_CONFIG_NAME=devenv/config/verifier",
-	)
-
-	verifierLog, err := os.Create("/tmp/verifier.log")
-	if err != nil {
-		return fmt.Errorf("create verifier log: %w", err)
-	}
-	verifierCmd.Stdout = verifierLog
-	verifierCmd.Stderr = verifierLog
-
-	err = verifierCmd.Start()
-	if err != nil {
-		return fmt.Errorf("start verifier: %w", err)
-	}
-	writePIDFile("/tmp/verifier.pid", verifierCmd.Process.Pid)
-	fmt.Printf("  PID: %d\n", verifierCmd.Process.Pid)
-	fmt.Println("  Log: /tmp/verifier.log")
+	fmt.Print("  MinIO...")
+	time.Sleep(3 * time.Second) // MinIO init needs time
+	fmt.Printf(" %s✓%s\n", colorGreen, colorReset)
 
 	// Wait for Verifier API
-	verifierURL := fmt.Sprintf("http://localhost:%d/plugins", config.Ports.Verifier)
-	fmt.Println("  Waiting for Verifier API (compiling + migrations)...")
-	if !waitForHealthy(verifierURL, 60*time.Second) {
-		return fmt.Errorf("verifier failed to start - check /tmp/verifier.log")
-	}
-	fmt.Printf("  %s✓%s Verifier API ready\n", colorGreen, colorReset)
-
-	// Seed plugins
-	fmt.Println("  Seeding plugins...")
-	seedFile := filepath.Join(localDir, "seed-plugins.sql")
-	seedCmd := exec.Command("docker", "exec", "-i", "vultisig-postgres", "psql", "-U", "vultisig", "-d", "vultisig-verifier")
-	seedData, _ := os.ReadFile(seedFile)
-	seedCmd.Stdin = strings.NewReader(string(seedData))
-	seedCmd.Run()
-	fmt.Printf("  %s✓%s Plugins seeded\n", colorGreen, colorReset)
-
-	// Step 3: Start Verifier Worker
-	fmt.Println()
-	fmt.Printf("%s[3/8]%s Starting Verifier Worker...\n", colorYellow, colorReset)
-
-	workerCmd := exec.Command("go", "run", "cmd/worker/main.go")
-	workerCmd.Dir = verifierRoot
-	workerCmd.Env = append(os.Environ(),
-		"DYLD_LIBRARY_PATH="+dyldPath+":"+os.Getenv("DYLD_LIBRARY_PATH"),
-		"VS_WORKER_CONFIG_NAME=devenv/config/worker",
-	)
-
-	workerLog, _ := os.Create("/tmp/worker.log")
-	workerCmd.Stdout = workerLog
-	workerCmd.Stderr = workerLog
-
-	err = workerCmd.Start()
-	if err != nil {
-		return fmt.Errorf("start worker: %w", err)
-	}
-	writePIDFile("/tmp/worker.pid", workerCmd.Process.Pid)
-	fmt.Printf("  PID: %d\n", workerCmd.Process.Pid)
-	fmt.Println("  Log: /tmp/worker.log")
-
-	// Step 4-8: Start DCA Plugin services
-	if !skipDCA && config.IsLocal("dca") && dcaRoot != "" {
-		fmt.Println()
-		fmt.Printf("%s[4/8]%s Starting DCA Plugin Server...\n", colorYellow, colorReset)
-
-		dcaEnvFile := filepath.Join(configsDir, "dca-server.env")
-		dcaEnv := loadEnvFile(dcaEnvFile)
-
-		dcaCmd := exec.Command("go", "run", "cmd/server/main.go")
-		dcaCmd.Dir = dcaRoot
-		dcaCmd.Env = append(os.Environ(), dcaEnv...)
-		dcaCmd.Env = append(dcaCmd.Env, "DYLD_LIBRARY_PATH="+dyldPath+":"+os.Getenv("DYLD_LIBRARY_PATH"))
-
-		dcaLog, _ := os.Create("/tmp/dca.log")
-		dcaCmd.Stdout = dcaLog
-		dcaCmd.Stderr = dcaLog
-
-		err = dcaCmd.Start()
-		if err != nil {
-			fmt.Printf("  %s!%s Failed to start DCA server: %v\n", colorYellow, colorReset, err)
-		} else {
-			writePIDFile("/tmp/dca.pid", dcaCmd.Process.Pid)
-			fmt.Printf("  PID: %d\n", dcaCmd.Process.Pid)
-			fmt.Println("  Log: /tmp/dca.log")
-
-			dcaURL := fmt.Sprintf("http://localhost:%d/healthz", config.Ports.DCAServer)
-			fmt.Println("  Waiting for DCA Plugin API (compiling + migrations)...")
-			if waitForHealthy(dcaURL, 60*time.Second) {
-				fmt.Printf("  %s✓%s DCA Plugin API ready\n", colorGreen, colorReset)
-			} else {
-				fmt.Printf("  %s!%s DCA Plugin failed to start - check /tmp/dca.log\n", colorYellow, colorReset)
-			}
-		}
-
-		fmt.Println()
-		fmt.Printf("%s[5/8]%s Starting DCA Plugin Worker...\n", colorYellow, colorReset)
-
-		dcaWorkerEnvFile := filepath.Join(configsDir, "dca-worker.env")
-		dcaWorkerEnv := loadEnvFile(dcaWorkerEnvFile)
-
-		dcaWorkerCmd := exec.Command("go", "run", "cmd/worker/main.go")
-		dcaWorkerCmd.Dir = dcaRoot
-		dcaWorkerCmd.Env = append(os.Environ(), dcaWorkerEnv...)
-		dcaWorkerCmd.Env = append(dcaWorkerCmd.Env, "DYLD_LIBRARY_PATH="+dyldPath+":"+os.Getenv("DYLD_LIBRARY_PATH"))
-
-		dcaWorkerLog, _ := os.Create("/tmp/dca-worker.log")
-		dcaWorkerCmd.Stdout = dcaWorkerLog
-		dcaWorkerCmd.Stderr = dcaWorkerLog
-
-		err = dcaWorkerCmd.Start()
-		if err != nil {
-			fmt.Printf("  %s!%s Failed to start DCA worker: %v\n", colorYellow, colorReset, err)
-		} else {
-			writePIDFile("/tmp/dca-worker.pid", dcaWorkerCmd.Process.Pid)
-			fmt.Printf("  PID: %d\n", dcaWorkerCmd.Process.Pid)
-			fmt.Println("  Log: /tmp/dca-worker.log")
-		}
-
-		// Step 6: Start DCA Scheduler
-		fmt.Println()
-		fmt.Printf("%s[6/8]%s Starting DCA Scheduler...\n", colorYellow, colorReset)
-
-		dcaSchedulerEnvFile := filepath.Join(configsDir, "dca-scheduler.env")
-		dcaSchedulerEnv := loadEnvFile(dcaSchedulerEnvFile)
-
-		dcaSchedulerCmd := exec.Command("go", "run", "cmd/scheduler/main.go")
-		dcaSchedulerCmd.Dir = dcaRoot
-		dcaSchedulerCmd.Env = append(os.Environ(), dcaSchedulerEnv...)
-
-		dcaSchedulerLog, _ := os.Create("/tmp/dca-scheduler.log")
-		dcaSchedulerCmd.Stdout = dcaSchedulerLog
-		dcaSchedulerCmd.Stderr = dcaSchedulerLog
-
-		err = dcaSchedulerCmd.Start()
-		if err != nil {
-			fmt.Printf("  %s!%s Failed to start DCA scheduler: %v\n", colorYellow, colorReset, err)
-		} else {
-			writePIDFile("/tmp/dca-scheduler.pid", dcaSchedulerCmd.Process.Pid)
-			fmt.Printf("  PID: %d\n", dcaSchedulerCmd.Process.Pid)
-			fmt.Println("  Log: /tmp/dca-scheduler.log")
-		}
-
-		// Step 7: Start DCA TX Indexer
-		fmt.Println()
-		fmt.Printf("%s[7/8]%s Starting DCA TX Indexer...\n", colorYellow, colorReset)
-
-		dcaTxIndexerEnvFile := filepath.Join(configsDir, "dca-tx-indexer.env")
-		dcaTxIndexerEnv := loadEnvFile(dcaTxIndexerEnvFile)
-
-		dcaTxIndexerCmd := exec.Command("go", "run", "cmd/tx_indexer/main.go")
-		dcaTxIndexerCmd.Dir = dcaRoot
-		dcaTxIndexerCmd.Env = append(os.Environ(), dcaTxIndexerEnv...)
-
-		dcaTxIndexerLog, _ := os.Create("/tmp/dca-tx-indexer.log")
-		dcaTxIndexerCmd.Stdout = dcaTxIndexerLog
-		dcaTxIndexerCmd.Stderr = dcaTxIndexerLog
-
-		err = dcaTxIndexerCmd.Start()
-		if err != nil {
-			fmt.Printf("  %s!%s Failed to start DCA TX indexer: %v\n", colorYellow, colorReset, err)
-		} else {
-			writePIDFile("/tmp/dca-tx-indexer.pid", dcaTxIndexerCmd.Process.Pid)
-			fmt.Printf("  PID: %d\n", dcaTxIndexerCmd.Process.Pid)
-			fmt.Println("  Log: /tmp/dca-tx-indexer.log")
-		}
+	fmt.Print("  Verifier API...")
+	if waitForHealthy("http://localhost:8080/plugins", 120*time.Second) {
+		fmt.Printf(" %s✓%s\n", colorGreen, colorReset)
 	} else {
-		fmt.Println()
-		fmt.Printf("%s[4/8]%s Skipping DCA Plugin Server\n", colorYellow, colorReset)
-		fmt.Println()
-		fmt.Printf("%s[5/8]%s Skipping DCA Plugin Worker\n", colorYellow, colorReset)
-		fmt.Println()
-		fmt.Printf("%s[6/8]%s Skipping DCA Scheduler\n", colorYellow, colorReset)
-		fmt.Println()
-		fmt.Printf("%s[7/8]%s Skipping DCA TX Indexer\n", colorYellow, colorReset)
+		fmt.Printf(" %s✗%s (check: docker logs vultisig-verifier)\n", colorRed, colorReset)
 	}
 
-	// Wait for workers to compile
+	// Wait for Verifier Worker (no health endpoint, just wait a bit)
+	fmt.Print("  Verifier Worker...")
+	time.Sleep(5 * time.Second)
+	fmt.Printf(" %s✓%s\n", colorGreen, colorReset)
+
+	if !skipDCA {
+		// Wait for DCA Plugin API
+		fmt.Print("  DCA Plugin API...")
+		if waitForHealthy("http://localhost:8082/spec", 120*time.Second) {
+			fmt.Printf(" %s✓%s\n", colorGreen, colorReset)
+		} else {
+			fmt.Printf(" %s✗%s (check: docker logs vultisig-dca)\n", colorRed, colorReset)
+		}
+
+		// Wait for DCA Worker (no health endpoint)
+		fmt.Print("  DCA Plugin Worker...")
+		time.Sleep(3 * time.Second)
+		fmt.Printf(" %s✓%s\n", colorGreen, colorReset)
+
+		// Wait for DCA Scheduler
+		fmt.Print("  DCA Scheduler...")
+		time.Sleep(2 * time.Second)
+		fmt.Printf(" %s✓%s\n", colorGreen, colorReset)
+
+		// Wait for DCA TX Indexer
+		fmt.Print("  DCA TX Indexer...")
+		time.Sleep(2 * time.Second)
+		fmt.Printf(" %s✓%s\n", colorGreen, colorReset)
+	}
+
+	// Step 4: Seed plugins
 	fmt.Println()
-	fmt.Printf("%s[8/8]%s Waiting for workers to compile...\n", colorYellow, colorReset)
-	time.Sleep(10 * time.Second)
+	fmt.Printf("%s[4/4]%s Seeding plugins...\n", colorYellow, colorReset)
+
+	seedFile := filepath.Join(localDir, "seed-plugins.sql")
+	if _, err := os.Stat(seedFile); err == nil {
+		seedData, _ := os.ReadFile(seedFile)
+		seedCmd := exec.Command("docker", "exec", "-i", "vultisig-postgres", "psql", "-U", "vultisig", "-d", "vultisig-verifier")
+		seedCmd.Stdin = strings.NewReader(string(seedData))
+		seedCmd.Run()
+		fmt.Printf("%s✓%s Plugins seeded\n", colorGreen, colorReset)
+	} else {
+		fmt.Printf("%s!%s No seed file found (optional)\n", colorYellow, colorReset)
+	}
 
 	// Print summary
 	elapsed := time.Since(startTime)
-	printStartupSummary(elapsed, skipDCA, config)
+	printDockerStartupSummary(elapsed, skipDCA)
 
 	return nil
 }
 
-func writePIDFile(path string, pid int) {
-	os.WriteFile(path, []byte(fmt.Sprintf("%d", pid)), 0644)
+func waitForDocker(containerName string, timeout time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+			cmd := exec.Command("docker", "inspect", "--format={{.State.Health.Status}}", containerName)
+			out, err := cmd.Output()
+			if err == nil && strings.TrimSpace(string(out)) == "healthy" {
+				return true
+			}
+			// Also check if container is running (for containers without health checks)
+			cmd = exec.Command("docker", "inspect", "--format={{.State.Running}}", containerName)
+			out, err = cmd.Output()
+			if err == nil && strings.TrimSpace(string(out)) == "true" {
+				// Container is running, check if it has a health status
+				cmd = exec.Command("docker", "inspect", "--format={{.State.Health}}", containerName)
+				out, _ = cmd.Output()
+				if strings.TrimSpace(string(out)) == "<nil>" {
+					// No health check defined, assume healthy if running
+					return true
+				}
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}
+}
+
+func waitForRedis(timeout time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+			cmd := exec.Command("docker", "exec", "vultisig-redis", "redis-cli", "-a", "vultisig", "ping")
+			out, err := cmd.Output()
+			if err == nil && strings.TrimSpace(string(out)) == "PONG" {
+				return true
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}
 }
 
 func waitForHealthy(url string, timeout time.Duration) bool {
@@ -370,27 +269,9 @@ func waitForHealthy(url string, timeout time.Duration) bool {
 			if resp != nil {
 				resp.Body.Close()
 			}
-			time.Sleep(1 * time.Second)
+			time.Sleep(2 * time.Second)
 		}
 	}
-}
-
-func loadEnvFile(path string) []string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-
-	var envVars []string
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		envVars = append(envVars, line)
-	}
-	return envVars
 }
 
 func findLocalDir() string {
@@ -401,7 +282,12 @@ func findLocalDir() string {
 
 	for _, p := range paths {
 		dockerCompose := filepath.Join(p, "docker-compose.yaml")
+		dockerComposeFull := filepath.Join(p, "docker-compose.full.yaml")
 		if _, err := os.Stat(dockerCompose); err == nil {
+			abs, _ := filepath.Abs(p)
+			return abs
+		}
+		if _, err := os.Stat(dockerComposeFull); err == nil {
 			abs, _ := filepath.Abs(p)
 			return abs
 		}
@@ -410,50 +296,35 @@ func findLocalDir() string {
 	return "local"
 }
 
-func findConfigsDir() string {
-	paths := []string{
-		"configs",
-		"local/configs",
-		filepath.Join(os.Getenv("HOME"), ".vultisig", "configs"),
-	}
-
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			abs, _ := filepath.Abs(p)
-			return abs
-		}
-	}
-
-	return "configs"
-}
-
-func printStartupSummary(elapsed time.Duration, skipDCA bool, config *ClusterConfig) {
+func printDockerStartupSummary(elapsed time.Duration, skipDCA bool) {
 	fmt.Println()
 	fmt.Printf("%s┌─────────────────────────────────────────────────────────────────┐%s\n", colorCyan, colorReset)
 	fmt.Printf("%s│%s %sSTARTUP COMPLETE%s                                                %s│%s\n", colorCyan, colorReset, colorBold, colorReset, colorCyan, colorReset)
 	fmt.Printf("%s├─────────────────────────────────────────────────────────────────┤%s\n", colorCyan, colorReset)
 	fmt.Printf("%s│%s                                                                 %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
-	fmt.Printf("%s│%s  Services Started:                                             %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("%s│%s  Services (Docker containers):                                 %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("%s│%s    Verifier API         localhost:8080                         %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("%s│%s    Verifier Worker      (background)                           %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
 
-	printServiceLine("Verifier API", "/tmp/verifier.pid", fmt.Sprintf("%d", config.Ports.Verifier))
-	printServiceLine("Verifier Worker", "/tmp/worker.pid", fmt.Sprintf("%d", config.Ports.VerifierWorkerMetrics))
-
-	if !skipDCA && config.IsLocal("dca") {
-		printServiceLine("DCA Plugin API", "/tmp/dca.pid", fmt.Sprintf("%d", config.Ports.DCAServer))
-		printServiceLine("DCA Plugin Worker", "/tmp/dca-worker.pid", fmt.Sprintf("%d", config.Ports.DCAWorkerMetrics))
-		printServiceLine("DCA Scheduler", "/tmp/dca-scheduler.pid", fmt.Sprintf("%d", config.Ports.DCASchedulerMetrics))
-		printServiceLine("DCA TX Indexer", "/tmp/dca-tx-indexer.pid", fmt.Sprintf("%d", config.Ports.DCATxIndexerMetrics))
+	if !skipDCA {
+		fmt.Printf("%s│%s    DCA Plugin API       localhost:8082                         %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+		fmt.Printf("%s│%s    DCA Plugin Worker    (background)                           %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+		fmt.Printf("%s│%s    DCA Scheduler        (background)                           %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+		fmt.Printf("%s│%s    DCA TX Indexer       (background)                           %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
 	}
 
 	fmt.Printf("%s│%s                                                                 %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
 	fmt.Printf("%s│%s  Infrastructure:                                               %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
-	fmt.Printf("%s│%s    PostgreSQL          localhost:%d                          %s│%s\n", colorCyan, colorReset, config.Ports.Postgres, colorCyan, colorReset)
-	fmt.Printf("%s│%s    Redis               localhost:%d                          %s│%s\n", colorCyan, colorReset, config.Ports.Redis, colorCyan, colorReset)
-	fmt.Printf("%s│%s    MinIO               localhost:%d (console: %d)          %s│%s\n", colorCyan, colorReset, config.Ports.Minio, config.Ports.MinioConsole, colorCyan, colorReset)
+	fmt.Printf("%s│%s    PostgreSQL           localhost:5432                         %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("%s│%s    Redis                localhost:6379                         %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("%s│%s    MinIO                localhost:9000 (console: 9090)         %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
 	fmt.Printf("%s│%s                                                                 %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
 	fmt.Printf("%s│%s  External Services:                                            %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
-	fmt.Printf("%s│%s    Relay:       %s%s\n", colorCyan, colorReset, config.GetRelayURL(), strings.Repeat(" ", 48-len(config.GetRelayURL()))+fmt.Sprintf("%s│%s", colorCyan, colorReset))
-	fmt.Printf("%s│%s    Vultiserver: %s%s\n", colorCyan, colorReset, config.GetVultiserverURL(), strings.Repeat(" ", 48-len(config.GetVultiserverURL()))+fmt.Sprintf("%s│%s", colorCyan, colorReset))
+	fmt.Printf("%s│%s    Relay:       https://api.vultisig.com/router                %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("%s│%s    Vultiserver: https://api.vultisig.com                       %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("%s│%s                                                                 %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("%s│%s  View logs:  docker logs <container-name>                      %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("%s│%s  Containers: vultisig-verifier, vultisig-worker, vultisig-dca  %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
 	fmt.Printf("%s│%s                                                                 %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
 	fmt.Printf("%s│%s  Total startup time: %s%ds%s                                        %s│%s\n", colorCyan, colorReset, colorBold, int(elapsed.Seconds()), colorReset, colorCyan, colorReset)
 	fmt.Printf("%s│%s                                                                 %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
@@ -463,12 +334,4 @@ func printStartupSummary(elapsed time.Duration, skipDCA bool, config *ClusterCon
 	fmt.Printf("%sReady for vault import!%s\n", colorGreen, colorReset)
 	fmt.Println()
 	fmt.Println("Next: vcli vault import --password <password>")
-}
-
-func printServiceLine(name, pidFile, port string) {
-	pid := "N/A"
-	if data, err := os.ReadFile(pidFile); err == nil {
-		pid = strings.TrimSpace(string(data))
-	}
-	fmt.Printf("%s│%s    %-20s PID: %-8s Port: %-6s %s│%s\n", colorCyan, colorReset, name, pid, port, colorCyan, colorReset)
 }

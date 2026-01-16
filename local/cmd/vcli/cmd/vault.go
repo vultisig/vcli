@@ -1095,7 +1095,7 @@ func runVaultAddress(chainFilter string) error {
 	fmt.Printf("Vault: %s\n\n", vault.Name)
 
 	for _, c := range supportedChains {
-		if chainFilter != "" && !strings.EqualFold(c.Name, chainFilter) && !strings.EqualFold(string(c.Chain), chainFilter) {
+		if chainFilter != "" && !strings.EqualFold(c.Name, chainFilter) && !strings.EqualFold(c.Chain.String(), chainFilter) {
 			continue
 		}
 
@@ -1130,7 +1130,7 @@ func runVaultBalance(chainFilter string) error {
 	fmt.Printf("Vault: %s\n\n", vault.Name)
 
 	for _, c := range supportedChains {
-		if chainFilter != "" && !strings.EqualFold(c.Name, chainFilter) && !strings.EqualFold(string(c.Chain), chainFilter) {
+		if chainFilter != "" && !strings.EqualFold(c.Name, chainFilter) && !strings.EqualFold(c.Chain.String(), chainFilter) {
 			continue
 		}
 
@@ -1289,7 +1289,7 @@ func runVaultDetails(chainFilter string) error {
 		fmt.Printf("│\n")
 
 		for _, c := range supportedChains {
-			if chainFilter != "" && !strings.EqualFold(c.Name, chainFilter) && !strings.EqualFold(string(c.Chain), chainFilter) {
+			if chainFilter != "" && !strings.EqualFold(c.Name, chainFilter) && !strings.EqualFold(c.Chain.String(), chainFilter) {
 				continue
 			}
 

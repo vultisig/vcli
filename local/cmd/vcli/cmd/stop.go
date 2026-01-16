@@ -81,10 +81,14 @@ func runStop() {
 		}
 	}
 
-	// Stop Docker
+	// Stop Docker containers
 	localDir := findLocalDir()
 	if localDir != "" {
-		composeFile := filepath.Join(localDir, "docker-compose.yaml")
+		// Try full compose file first, then basic
+		composeFile := filepath.Join(localDir, "docker-compose.full.yaml")
+		if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+			composeFile = filepath.Join(localDir, "docker-compose.yaml")
+		}
 		cmd := exec.Command("docker", "compose", "-f", composeFile, "down")
 		cmd.Run()
 	}
@@ -167,7 +171,11 @@ func runStopWithReport(keepInfra bool, clean bool) error {
 		}
 		localDir := findLocalDir()
 		if localDir != "" {
-			composeFile := filepath.Join(localDir, "docker-compose.yaml")
+			// Try full compose file first, then basic
+			composeFile := filepath.Join(localDir, "docker-compose.full.yaml")
+			if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+				composeFile = filepath.Join(localDir, "docker-compose.yaml")
+			}
 
 			// Count running containers
 			cmd := exec.Command("docker", "compose", "-f", composeFile, "ps", "-q")

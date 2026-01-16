@@ -1,6 +1,8 @@
 # vcli
 
-Vultisig CLI - Local development environment for testing Vultisig plugins with Docker-based infrastructure.
+Vultisig CLI - Local development environment for testing Vultisig plugins.
+
+**All services run as Docker containers - no local repo clones required!**
 
 ---
 
@@ -31,43 +33,10 @@ The bracketed steps (policy testing) can be repeated as many times as needed. Ev
 
 ## Prerequisites
 
-- **Go 1.23+** - https://go.dev/dl/
 - **Docker** - https://docs.docker.com/get-docker/
 - **Docker Compose** - Usually included with Docker Desktop
 
-## Dependencies
-
-Clone all required repositories into the same parent directory:
-
-```bash
-mkdir -p ~/dev/vultisig && cd ~/dev/vultisig
-
-# This repo
-git clone https://github.com/vultisig/vcli.git
-
-# Required dependencies
-git clone https://github.com/vultisig/verifier.git
-git clone https://github.com/vultisig/app-recurring.git
-git clone https://github.com/vultisig/go-wrappers.git
-```
-
-### Building go-wrappers (DKLS library)
-
-The go-wrappers repo contains the native DKLS cryptographic library required for TSS operations:
-
-```bash
-cd ~/dev/vultisig/go-wrappers
-
-# macOS
-./build_darwin.sh
-
-# Linux
-./build_linux.sh
-```
-
-This creates the native library in `includes/darwin/` (macOS) or `includes/linux/` (Linux).
-
-**Note:** The library path must be configured in `local/cluster.yaml` under `library.dyld_path`.
+That's it! No local repo clones, no library builds, no Go installation required.
 
 ## Vault Requirement
 
@@ -80,12 +49,12 @@ You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig m
 ## Initial Setup (One-Time)
 
 ```bash
+# Clone this repo
+git clone https://github.com/vultisig/vcli.git
 cd vcli
 
-# 1. Put your vault file in the keyshares directory
+# Put your vault file in the keyshares directory
 cp ~/Downloads/MyVault.vult local/keyshares/
-
-# 2. (Optional) Edit local/cluster.yaml if your repos are in different locations
 ```
 
 ---
@@ -102,31 +71,22 @@ Start all services (infrastructure + application services).
 make start
 ```
 
-**Service Modes:**
-```bash
-make start              # Default: dev mode (recommended)
-make start MODE=local   # All services run locally
-make start MODE=dev     # Relay+Vultiserver production, rest local (DEFAULT)
-make start MODE=prod    # All services use production endpoints
-```
-
-| Mode | Relay | Vultiserver | Verifier | Plugins |
-|------|-------|-------------|----------|---------|
-| local | localhost | localhost | localhost | localhost |
-| dev (default) | api.vultisig.com | api.vultisig.com | localhost | localhost |
-| prod | api.vultisig.com | api.vultisig.com | production | production |
+This starts Docker containers for:
+- Infrastructure: PostgreSQL, Redis, MinIO
+- Verifier: API server and worker
+- DCA Plugin: Server, worker, scheduler, tx-indexer
 
 **Validation:**
 ```bash
 make status
 ```
 
-✅ **Expected:** All services show as "running":
-- PostgreSQL, Redis, MinIO (infrastructure)
-- Verifier API, Verifier Worker (verifier stack)
-- DCA Server, DCA Worker, DCA Scheduler (plugin stack)
+✅ **Expected:** All containers show as "running":
+- vultisig-postgres, vultisig-redis, vultisig-minio
+- vultisig-verifier, vultisig-worker
+- vultisig-dca, vultisig-dca-worker, vultisig-dca-scheduler
 
-❌ **If validation fails:** Check logs with `make logs`. Fix the issue and restart with `make stop && make start`.
+❌ **If validation fails:** Check logs with `docker logs <container-name>`. Fix the issue and restart with `make stop && make start`.
 
 ---
 
@@ -188,8 +148,8 @@ Install a plugin. This performs a 4-party TSS reshare.
 **What happens:** A 4-party reshare occurs between:
 - CLI (your local vault share)
 - Fast Vault Server (production cloud backup)
-- Verifier Worker (local)
-- DCA Plugin Worker (local)
+- Verifier Worker (Docker container)
+- DCA Plugin Worker (Docker container)
 
 **Validation:**
 ```bash
@@ -201,7 +161,7 @@ Install a plugin. This performs a 4-party TSS reshare.
 - Report shows keyshare files stored in MinIO (4 parties)
 - Signers list now includes verifier and plugin parties
 
-❌ **If validation fails:** Check that both workers are running (`make status`). Check logs for TSS errors. **Do not attempt to fix manually** - run `make stop && make start` and restart from Step 1.
+❌ **If validation fails:** Check that containers are running (`make status`). Check logs with `docker logs vultisig-worker`. **Do not attempt to fix manually** - run `make stop && make start` and restart from Step 1.
 
 ---
 
@@ -286,7 +246,7 @@ Add the policy to the installed plugin.
 
 ✅ **Expected:** Your policy appears in the list with a policy ID.
 
-❌ **If validation fails:** Check that the plugin is installed (Step 3). Check verifier logs for signing errors.
+❌ **If validation fails:** Check that the plugin is installed (Step 3). Check verifier logs with `docker logs vultisig-verifier`.
 
 ---
 
@@ -308,11 +268,8 @@ Monitor the policy execution and check its status.
 ./local/vcli.sh policy list --plugin vultisig-dca-0000
 
 # Watch logs in real-time
-make logs
-
-# Or watch specific service logs
-tail -f /tmp/dca-worker.log
-tail -f /tmp/dca-scheduler.log
+docker logs -f vultisig-dca-worker
+docker logs -f vultisig-dca-scheduler
 ```
 
 **Next steps:**
@@ -401,31 +358,13 @@ make status
 
 ---
 
-## Service Modes
-
-Use `--mode` flag when starting services (or override with `cluster.yaml`):
-
-```bash
-make start              # Default: dev mode
-make start MODE=local   # All local
-make start MODE=dev     # Relay+Vultiserver production, rest local
-make start MODE=prod    # All production
-```
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| **local** | All services run from source | Testing relay/vultiserver changes |
-| **dev** | Relay+Vultiserver use production, rest local | **Recommended for plugin development** |
-| **prod** | All services use production endpoints | Integration testing against live |
-
-The mode flag overrides `cluster.yaml` service settings at runtime.
-
 ## vcli Commands Reference
 
 ```bash
 # Vault management (put .vult file in local/keyshares/ first)
 ./local/vcli.sh vault import --password "password"
 ./local/vcli.sh vault list
+./local/vcli.sh vault details
 
 # Plugin management
 ./local/vcli.sh plugin list
@@ -448,16 +387,18 @@ The mode flag overrides `cluster.yaml` service settings at runtime.
 
 ## Services & Ports
 
-| Service | Port | Description |
-|---------|------|-------------|
-| PostgreSQL | 5432 | Database |
-| Redis | 6379 | Task queue |
-| MinIO | 9000 | Keyshare storage |
-| MinIO Console | 9090 | MinIO web UI |
-| Verifier API | 8080 | Main verifier |
-| Verifier Worker | 8089 | Worker metrics |
-| DCA Server | 8082 | DCA plugin API |
-| DCA Worker | 8183 | DCA worker metrics |
+| Service | Port | Container Name |
+|---------|------|----------------|
+| PostgreSQL | 5432 | vultisig-postgres |
+| Redis | 6379 | vultisig-redis |
+| MinIO | 9000 | vultisig-minio |
+| MinIO Console | 9090 | vultisig-minio |
+| Verifier API | 8080 | vultisig-verifier |
+| Verifier Worker | - | vultisig-worker |
+| DCA Server | 8082 | vultisig-dca |
+| DCA Worker | - | vultisig-dca-worker |
+| DCA Scheduler | - | vultisig-dca-scheduler |
+| DCA TX Indexer | - | vultisig-dca-tx-indexer |
 
 ## Queue Isolation (4-Party TSS)
 
@@ -467,21 +408,15 @@ When installing a plugin, a 4-party TSS reshare occurs:
 - **Verifier Worker** (listens on `default_queue`)
 - **DCA Plugin Worker** (listens on `dca_plugin_queue`)
 
-The workers use separate task queues to prevent task stealing. This is configured in:
-- `local/configs/dca-server.env`: `SERVER_TASKQUEUENAME=dca_plugin_queue`
-- `local/configs/dca-worker.env`: `TASK_QUEUE_NAME=dca_plugin_queue`
+The workers use separate task queues to prevent task stealing.
 
 ## Make Commands
 
 ```bash
 make build                  # Build vcli
-make start                  # Start services (default: dev mode)
-make start MODE=local       # Start all services locally
-make start MODE=dev         # Relay+Vultiserver production, rest local
-make start MODE=prod        # All production endpoints
-make stop                   # Stop all services and clean all state
-make status                 # Show service status
-make logs                   # Tail all logs
+make start                  # Start all services
+make stop                   # Stop all services and clean state
+make status                 # Show container status
 ```
 
 ## Directory Structure
@@ -489,26 +424,30 @@ make logs                   # Tail all logs
 ```
 vcli/
 ├── local/
-│   ├── cmd/vcli/             # vcli source code
-│   ├── scripts/              # Shell scripts (vcli.sh)
-│   ├── keyshares/            # Put your .vult files here
-│   ├── policies/             # Policy JSON templates
-│   ├── configs/              # Service environment files (*.env)
-│   ├── docker-compose.yaml   # Docker infrastructure
-│   ├── cluster.yaml          # Cluster configuration
-│   └── Dockerfile            # vcli container image
+│   ├── cmd/vcli/               # vcli source code
+│   ├── scripts/                # Shell scripts (vcli.sh)
+│   ├── keyshares/              # Put your .vult files here
+│   ├── policies/               # Policy JSON templates
+│   ├── configs/                # Service environment files (*.env)
+│   ├── docker-compose.yaml     # Infrastructure only
+│   ├── docker-compose.full.yaml # All services as Docker
+│   └── cluster.yaml            # Cluster configuration
 └── Makefile
 ```
 
 ## Troubleshooting
 
-### Library Not Found Error
+### Container Won't Start
 
-```
-dyld: Library not loaded: libgodkls.dylib
-```
+```bash
+# Check container logs
+docker logs vultisig-verifier
+docker logs vultisig-worker
+docker logs vultisig-dca
 
-**Solution:** Use `./local/vcli.sh` wrapper which sets `DYLD_LIBRARY_PATH` from `cluster.yaml`.
+# Check all container status
+docker compose -f local/docker-compose.full.yaml ps
+```
 
 ### Port Conflicts
 
@@ -528,8 +467,29 @@ docker exec vultisig-redis redis-cli -a vultisig KEYS "asynq:*queue*"
 ### View Logs
 
 ```bash
-tail -f /tmp/verifier.log      # Verifier server
-tail -f /tmp/worker.log        # Verifier worker
-tail -f /tmp/dca.log           # DCA plugin server
-tail -f /tmp/dca-worker.log    # DCA plugin worker
+# View specific container logs
+docker logs -f vultisig-verifier      # Verifier server
+docker logs -f vultisig-worker        # Verifier worker
+docker logs -f vultisig-dca           # DCA plugin server
+docker logs -f vultisig-dca-worker    # DCA plugin worker
+docker logs -f vultisig-dca-scheduler # DCA scheduler
+
+# View all logs
+docker compose -f local/docker-compose.full.yaml logs -f
+```
+
+### go-wrappers Library
+
+The go-wrappers CGO library is automatically downloaded on first run. If you encounter library loading issues:
+
+```bash
+# Check if libraries are downloaded
+ls -la ~/.vultisig/lib/
+
+# Force re-download by removing the marker file
+rm ~/.vultisig/lib/darwin/.downloaded-master  # macOS
+rm ~/.vultisig/lib/linux/.downloaded-master   # Linux
+
+# Then run any vcli command to trigger download
+./local/vcli.sh --help
 ```
