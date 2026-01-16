@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -99,7 +102,7 @@ func runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVault
 	amountSmallest := ConvertToSmallestUnit(amount, fromAsset)
 
 	// Build recipe
-	recipe := map[string]interface{}{
+	recipe := map[string]any{
 		"from": map[string]string{
 			"chain":   fromAsset.Chain,
 			"token":   fromAsset.Token,
@@ -114,9 +117,15 @@ func runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVault
 		"frequency":  frequency,
 	}
 
-	policy := map[string]interface{}{
+	// Validate recipe with plugin server
+	err = validateRecipeWithPlugin(pluginID, recipe)
+	if err != nil {
+		return fmt.Errorf("recipe validation failed: %w", err)
+	}
+
+	policy := map[string]any{
 		"recipe":  recipe,
-		"billing": []interface{}{},
+		"billing": []any{},
 	}
 
 	jsonBytes, err := json.MarshalIndent(policy, "", "  ")
@@ -166,4 +175,43 @@ func deriveAddressForChain(vault *LocalVault, chainName string) (string, error) 
 	}
 
 	return addr, nil
+}
+
+func validateRecipeWithPlugin(pluginID string, recipe map[string]any) error {
+	pluginServerURL, err := GetPluginServerURL(pluginID)
+	if err != nil {
+		return fmt.Errorf("get plugin server URL: %w", err)
+	}
+
+	reqBody, err := json.Marshal(map[string]any{
+		"configuration": recipe,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	resp, err := http.Post(pluginServerURL+"/plugin/recipe-specification/suggest", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s", extractErrorMessage(body))
+	}
+
+	return nil
+}
+
+func extractErrorMessage(body []byte) string {
+	var resp map[string]any
+	err := json.Unmarshal(body, &resp)
+	if err != nil {
+		return string(body)
+	}
+	if msg, ok := resp["message"].(string); ok {
+		return msg
+	}
+	return string(body)
 }
