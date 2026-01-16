@@ -9,11 +9,11 @@ Vultisig CLI - Local development environment for testing Vultisig plugins with D
 **You MUST follow the E2E testing flow exactly as documented below.** The flow is:
 
 ```
-START → IMPORT → INSTALL → [ GENERATE → ADD → MONITOR → DELETE ] → UNINSTALL → STOP
-                                ↑__________repeat_________↲
+START → IMPORT → INSTALL → [ GENERATE → ADD → MONITOR ] → [ repeat for more policies ]
+                                ↑_________________↲
 ```
 
-The bracketed steps (policy testing) can be repeated. Everything else runs once per test cycle.
+The bracketed steps (policy testing) can be repeated as many times as needed. Everything else runs once per test cycle. When completely done testing, proceed to cleanup (DELETE → UNINSTALL → STOP).
 
 **Do NOT:**
 - Restart mid-way through a test cycle
@@ -200,22 +200,23 @@ Install a plugin. This performs a 4-party TSS reshare.
 
 ---
 
-### Policy Testing Loop (Steps 4-7)
+### Policy Testing Loop (Steps 4-6)
 
-Once a plugin is installed, you can run multiple policies without restarting. Repeat Steps 4-7 as many times as needed:
+Once a plugin is installed, you can create and test multiple policies without restarting. Repeat Steps 4-6 as many times as needed:
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  GENERATE → ADD → MONITOR → DELETE  (repeat)   │
+│  GENERATE → ADD → MONITOR  (repeat for more)   │
 └─────────────────────────────────────────────────┘
 ```
 
 This is the **only** valid shortcut. You may:
-- Test different policy configurations
-- Run the same policy multiple times
+- Test different policy configurations (different assets, amounts, frequencies)
+- Create multiple policies simultaneously
+- Monitor execution across different policies
 - Test edge cases and error conditions
 
-When done testing policies, continue to Step 8 (UNINSTALL) before stopping.
+**Continue testing more policies** by repeating Steps 4-6. When completely done with all testing, proceed to cleanup (Steps 7-9).
 
 ---
 
@@ -286,11 +287,20 @@ Add the policy to the installed plugin.
 
 ### Step 6: MONITOR
 
-Monitor the policy execution.
+Monitor the policy execution and check its status.
 
 ```bash
-# Check policy status
+# Check policy status and next execution time
 ./local/vcli.sh policy status <policy-id>
+
+# View executed transactions
+./local/vcli.sh policy transactions <policy-id>
+
+# View transaction history
+./local/vcli.sh policy history <policy-id>
+
+# List all policies for the plugin
+./local/vcli.sh policy list --plugin vultisig-dca-0000
 
 # Watch logs in real-time
 make logs
@@ -300,24 +310,30 @@ tail -f /tmp/dca-worker.log
 tail -f /tmp/dca-scheduler.log
 ```
 
-**Validation:**
-```bash
-./local/vcli.sh policy status <policy-id>
-```
+**Next steps:**
+- **Test another policy:** Go back to Step 4 (GENERATE) to create a new policy
+- **Monitor existing policies:** Use `policy status`, `policy transactions`, or `policy history` commands
+- **When done testing:** Proceed to cleanup steps (DELETE → UNINSTALL → STOP)
 
-✅ **Expected:** Policy shows execution history, pending/completed transactions.
+✅ **Expected:** Policy shows execution history, pending/completed transactions, and next scheduled execution time.
 
 ❌ **If validation fails:** Check scheduler and worker logs for errors. Verify the policy frequency and chain configuration.
 
 ---
 
-### Step 7: DELETE
+## Cleanup Steps (When Done Testing)
 
-Delete the policy.
+When you're completely finished testing all policies, follow these cleanup steps:
+
+### Step 7: DELETE (Optional)
+
+Delete individual policies if you want to clean up specific ones.
 
 ```bash
 ./local/vcli.sh policy delete <policy-id> --password "password"
 ```
+
+**Note:** You can skip this step if you want to keep policies for future testing. Policies will be cleaned up when you uninstall the plugin.
 
 **Validation:**
 ```bash
@@ -326,13 +342,11 @@ Delete the policy.
 
 ✅ **Expected:** The deleted policy no longer appears in the list.
 
-❌ **If validation fails:** Verify you used the correct policy ID.
-
 ---
 
 ### Step 8: UNINSTALL
 
-Uninstall the plugin.
+Uninstall the plugin. This will remove all policies associated with the plugin.
 
 ```bash
 ./local/vcli.sh plugin uninstall vultisig-dca-0000
@@ -345,7 +359,7 @@ Uninstall the plugin.
 
 ✅ **Expected:** Plugin installation no longer appears in the report.
 
-❌ **If validation fails:** Check for remaining policies - all policies must be deleted before uninstalling.
+❌ **If validation fails:** Check for remaining policies - all policies will be automatically removed when uninstalling.
 
 ---
 
@@ -363,6 +377,8 @@ make status
 ```
 
 ✅ **Expected:** All services show as stopped or not running.
+
+**Note:** Only run this when you're completely done with testing. If you want to test more policies, stay in the policy testing loop (Steps 4-6).
 
 ---
 
@@ -412,10 +428,13 @@ The mode flag overrides `cluster.yaml` service settings at runtime.
 ./local/vcli.sh plugin uninstall <plugin-id>
 
 # Policy management
+./local/vcli.sh policy generate --from <asset> --to <asset> --amount <amount> --output <file.json>
 ./local/vcli.sh policy add --plugin <plugin-id> --policy-file <config.json> --password "password"
 ./local/vcli.sh policy list --plugin <plugin-id>
-./local/vcli.sh policy delete <policy-id> --password "password"
-./local/vcli.sh policy status <policy-id>
+./local/vcli.sh policy status <policy-id>        # Check status and next execution
+./local/vcli.sh policy transactions <policy-id>   # View executed transactions
+./local/vcli.sh policy history <policy-id>        # View transaction history
+./local/vcli.sh policy delete <policy-id> --password "password"  # Cleanup only
 
 # Status and reporting
 ./local/vcli.sh report

@@ -449,7 +449,10 @@ func runPolicyAdd(pluginID, configFile string, password string) error {
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 	fmt.Println()
 	if policyID != "" {
-		fmt.Printf("Next: vcli policy status %s\n", policyID)
+		fmt.Println("Monitor policy execution:")
+		fmt.Printf("  vcli policy status %s        # Check status and next execution time\n", policyID)
+		fmt.Printf("  vcli policy transactions %s  # View executed transactions\n", policyID)
+		fmt.Printf("  vcli policy history %s       # View transaction history\n", policyID)
 	}
 
 	return nil
