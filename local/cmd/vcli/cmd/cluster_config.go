@@ -4,27 +4,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+// ClusterConfig holds configuration for the local development cluster.
+// All services run as Docker containers - no local repo clones needed.
 type ClusterConfig struct {
-	Repos     RepoConfig     `yaml:"repos"`
 	Services  ServiceConfig  `yaml:"services"`
 	Endpoints EndpointConfig `yaml:"endpoints"`
-	Library   LibraryConfig  `yaml:"library"`
+	Images    ImageConfig    `yaml:"images"`
 	Ports     PortConfig     `yaml:"ports"`
 }
 
-type RepoConfig struct {
-	Verifier    string `yaml:"verifier"`
-	Vultiserver string `yaml:"vultiserver"`
-	Relay       string `yaml:"relay"`
-	DCA         string `yaml:"dca"`
-	GoWrappers  string `yaml:"go_wrappers"`
-}
-
+// ServiceConfig defines which services run in Docker vs production.
 type ServiceConfig struct {
 	Postgres       string `yaml:"postgres"`
 	Redis          string `yaml:"redis"`
@@ -39,15 +32,23 @@ type ServiceConfig struct {
 	DCATxIndexer   string `yaml:"dca_tx_indexer"`
 }
 
+// EndpointConfig holds production endpoint URLs.
 type EndpointConfig struct {
 	Relay       string `yaml:"relay"`
 	Vultiserver string `yaml:"vultiserver"`
 }
 
-type LibraryConfig struct {
-	DYLDPath string `yaml:"dyld_path"`
+// ImageConfig allows pinning specific Docker image versions.
+type ImageConfig struct {
+	Verifier       string `yaml:"verifier"`
+	VerifierWorker string `yaml:"verifier_worker"`
+	DCAServer      string `yaml:"dca_server"`
+	DCAWorker      string `yaml:"dca_worker"`
+	DCAScheduler   string `yaml:"dca_scheduler"`
+	DCATxIndexer   string `yaml:"dca_tx_indexer"`
 }
 
+// PortConfig holds port numbers for local services.
 type PortConfig struct {
 	Verifier              int `yaml:"verifier"`
 	VerifierWorkerMetrics int `yaml:"verifier_worker_metrics"`
@@ -65,6 +66,8 @@ type PortConfig struct {
 
 var clusterConfig *ClusterConfig
 
+// LoadClusterConfig loads the cluster configuration from cluster.yaml.
+// It searches in: current directory, local/, and ~/.vultisig/
 func LoadClusterConfig() (*ClusterConfig, error) {
 	if clusterConfig != nil {
 		return clusterConfig, nil
@@ -85,7 +88,11 @@ func LoadClusterConfig() (*ClusterConfig, error) {
 	}
 
 	if configPath == "" {
-		return nil, fmt.Errorf("cluster.yaml not found in current directory, local/, or ~/.vultisig/")
+		// Return default config if no file found
+		config := &ClusterConfig{}
+		config.setDefaults()
+		clusterConfig = config
+		return clusterConfig, nil
 	}
 
 	data, err := os.ReadFile(configPath)
@@ -99,31 +106,14 @@ func LoadClusterConfig() (*ClusterConfig, error) {
 		return nil, fmt.Errorf("parse cluster.yaml: %w", err)
 	}
 
-	config.expandPaths()
 	config.setDefaults()
 
 	clusterConfig = config
 	return clusterConfig, nil
 }
 
-func (c *ClusterConfig) expandPaths() {
-	home := os.Getenv("HOME")
-	expand := func(p string) string {
-		if strings.HasPrefix(p, "~/") {
-			return filepath.Join(home, p[2:])
-		}
-		return p
-	}
-
-	c.Repos.Verifier = expand(c.Repos.Verifier)
-	c.Repos.Vultiserver = expand(c.Repos.Vultiserver)
-	c.Repos.Relay = expand(c.Repos.Relay)
-	c.Repos.DCA = expand(c.Repos.DCA)
-	c.Repos.GoWrappers = expand(c.Repos.GoWrappers)
-	c.Library.DYLDPath = expand(c.Library.DYLDPath)
-}
-
 func (c *ClusterConfig) setDefaults() {
+	// Default endpoints
 	if c.Endpoints.Relay == "" {
 		c.Endpoints.Relay = "https://api.vultisig.com/router"
 	}
@@ -131,11 +121,24 @@ func (c *ClusterConfig) setDefaults() {
 		c.Endpoints.Vultiserver = "https://api.vultisig.com"
 	}
 
+	// Default ports
 	if c.Ports.Verifier == 0 {
 		c.Ports.Verifier = 8080
 	}
+	if c.Ports.VerifierWorkerMetrics == 0 {
+		c.Ports.VerifierWorkerMetrics = 8089
+	}
 	if c.Ports.DCAServer == 0 {
 		c.Ports.DCAServer = 8082
+	}
+	if c.Ports.DCAWorkerMetrics == 0 {
+		c.Ports.DCAWorkerMetrics = 8183
+	}
+	if c.Ports.DCASchedulerMetrics == 0 {
+		c.Ports.DCASchedulerMetrics = 8185
+	}
+	if c.Ports.DCATxIndexerMetrics == 0 {
+		c.Ports.DCATxIndexerMetrics = 8187
 	}
 	if c.Ports.Postgres == 0 {
 		c.Ports.Postgres = 5432
@@ -146,101 +149,116 @@ func (c *ClusterConfig) setDefaults() {
 	if c.Ports.Minio == 0 {
 		c.Ports.Minio = 9000
 	}
+	if c.Ports.MinioConsole == 0 {
+		c.Ports.MinioConsole = 9090
+	}
+
+	// Default service modes to docker
+	if c.Services.Postgres == "" {
+		c.Services.Postgres = "docker"
+	}
+	if c.Services.Redis == "" {
+		c.Services.Redis = "docker"
+	}
+	if c.Services.Minio == "" {
+		c.Services.Minio = "docker"
+	}
+	if c.Services.Relay == "" {
+		c.Services.Relay = "production"
+	}
+	if c.Services.Vultiserver == "" {
+		c.Services.Vultiserver = "production"
+	}
+	if c.Services.Verifier == "" {
+		c.Services.Verifier = "docker"
+	}
+	if c.Services.VerifierWorker == "" {
+		c.Services.VerifierWorker = "docker"
+	}
+	if c.Services.DCAServer == "" {
+		c.Services.DCAServer = "docker"
+	}
+	if c.Services.DCAWorker == "" {
+		c.Services.DCAWorker = "docker"
+	}
+	if c.Services.DCAScheduler == "" {
+		c.Services.DCAScheduler = "docker"
+	}
+	if c.Services.DCATxIndexer == "" {
+		c.Services.DCATxIndexer = "docker"
+	}
+
+	// Default Docker images (use latest)
+	if c.Images.Verifier == "" {
+		c.Images.Verifier = "ghcr.io/vultisig/verifier:latest"
+	}
+	if c.Images.VerifierWorker == "" {
+		c.Images.VerifierWorker = "ghcr.io/vultisig/verifier-worker:latest"
+	}
+	if c.Images.DCAServer == "" {
+		c.Images.DCAServer = "ghcr.io/vultisig/dca-server:latest"
+	}
+	if c.Images.DCAWorker == "" {
+		c.Images.DCAWorker = "ghcr.io/vultisig/dca-worker:latest"
+	}
+	if c.Images.DCAScheduler == "" {
+		c.Images.DCAScheduler = "ghcr.io/vultisig/dca-scheduler:latest"
+	}
+	if c.Images.DCATxIndexer == "" {
+		c.Images.DCATxIndexer = "ghcr.io/vultisig/dca-tx-indexer:latest"
+	}
 }
 
-func (c *ClusterConfig) IsLocal(service string) bool {
+// IsDocker returns true if the service runs as a Docker container.
+func (c *ClusterConfig) IsDocker(service string) bool {
 	switch service {
 	case "relay":
-		return c.Services.Relay == "local"
+		return c.Services.Relay == "docker"
 	case "vultiserver":
-		return c.Services.Vultiserver == "local"
+		return c.Services.Vultiserver == "docker"
 	case "verifier":
-		return c.Services.Verifier == "local"
+		return c.Services.Verifier == "docker"
 	case "dca":
-		return c.Services.DCAServer == "local"
+		return c.Services.DCAServer == "docker"
 	default:
 		return true
 	}
 }
 
+// IsProduction returns true if the service uses production endpoints.
+func (c *ClusterConfig) IsProduction(service string) bool {
+	switch service {
+	case "relay":
+		return c.Services.Relay == "production"
+	case "vultiserver":
+		return c.Services.Vultiserver == "production"
+	default:
+		return false
+	}
+}
+
+// GetRelayURL returns the relay URL based on configuration.
 func (c *ClusterConfig) GetRelayURL() string {
-	if c.IsLocal("relay") {
+	if c.IsDocker("relay") {
 		return fmt.Sprintf("http://localhost:%d", c.Ports.Relay)
 	}
 	return c.Endpoints.Relay
 }
 
+// GetVultiserverURL returns the vultiserver URL based on configuration.
 func (c *ClusterConfig) GetVultiserverURL() string {
-	if c.IsLocal("vultiserver") {
+	if c.IsDocker("vultiserver") {
 		return fmt.Sprintf("http://localhost:%d", c.Ports.Vultiserver)
 	}
 	return c.Endpoints.Vultiserver
 }
 
-func (c *ClusterConfig) GetDYLDPath() string {
-	return c.Library.DYLDPath
+// GetVerifierURL returns the verifier URL (always local for development).
+func (c *ClusterConfig) GetVerifierURL() string {
+	return fmt.Sprintf("http://localhost:%d", c.Ports.Verifier)
 }
 
-// ApplyMode overrides service settings based on mode:
-// - local: all services run locally
-// - dev: relay and vultiserver use production, rest local
-// - prod: all services use production endpoints
-func (c *ClusterConfig) ApplyMode(mode string) {
-	switch mode {
-	case "local":
-		c.Services.Relay = "local"
-		c.Services.Vultiserver = "local"
-		c.Services.Verifier = "local"
-		c.Services.VerifierWorker = "local"
-		c.Services.DCAServer = "local"
-		c.Services.DCAWorker = "local"
-		c.Services.DCAScheduler = "local"
-		c.Services.DCATxIndexer = "local"
-	case "dev":
-		c.Services.Relay = "production"
-		c.Services.Vultiserver = "production"
-		c.Services.Verifier = "local"
-		c.Services.VerifierWorker = "local"
-		c.Services.DCAServer = "local"
-		c.Services.DCAWorker = "local"
-		c.Services.DCAScheduler = "local"
-		c.Services.DCATxIndexer = "local"
-	case "prod":
-		c.Services.Relay = "production"
-		c.Services.Vultiserver = "production"
-		c.Services.Verifier = "production"
-		c.Services.VerifierWorker = "production"
-		c.Services.DCAServer = "production"
-		c.Services.DCAWorker = "production"
-		c.Services.DCAScheduler = "production"
-		c.Services.DCATxIndexer = "production"
-	}
-}
-
-func (c *ClusterConfig) ValidateRepos() error {
-	repos := map[string]string{
-		"verifier":   c.Repos.Verifier,
-		"go_wrappers": c.Repos.GoWrappers,
-	}
-
-	if c.IsLocal("vultiserver") {
-		repos["vultiserver"] = c.Repos.Vultiserver
-	}
-	if c.IsLocal("relay") {
-		repos["relay"] = c.Repos.Relay
-	}
-	if c.IsLocal("dca") {
-		repos["dca"] = c.Repos.DCA
-	}
-
-	for name, path := range repos {
-		if path == "" {
-			return fmt.Errorf("repo path for %s is not configured", name)
-		}
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			return fmt.Errorf("repo %s not found at %s", name, path)
-		}
-	}
-
-	return nil
+// GetDCAServerURL returns the DCA server URL (always local for development).
+func (c *ClusterConfig) GetDCAServerURL() string {
+	return fmt.Sprintf("http://localhost:%d", c.Ports.DCAServer)
 }

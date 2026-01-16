@@ -1,45 +1,45 @@
 # Vultisig Local Development Cluster Configuration
+#
+# All services run as Docker containers by default.
+# No local repository clones required!
 
-# Repository paths (absolute paths recommended)
-repos:
-  verifier: ~/dev/vultisig/verifier
-  vultiserver: ~/dev/vultisig/vultiserver
-  relay: ~/dev/vultisig/vultisig-relay
-  dca: ~/dev/vultisig/app-recurring
-  go_wrappers: ~/dev/vultisig/go-wrappers
-
-# Service modes: "local" (run from source) or "production" (use prod endpoints)
+# Service modes: "docker" (default) or "production" (use prod endpoints)
 services:
   # Core infrastructure - always local via Docker
-  postgres: local
-  redis: local
-  minio: local
+  postgres: docker
+  redis: docker
+  minio: docker
 
-  # TSS coordination
-  relay: production        # Use production relay
+  # TSS coordination - use production relay
+  relay: production
 
-  # Fast Vault (holds user's 2-of-2 share)
-  vultiserver: production  # Use production vultiserver
+  # Fast Vault - use production vultiserver
+  vultiserver: production
 
-  # Verifier stack
-  verifier: local
-  verifier_worker: local
+  # Verifier stack - runs in Docker
+  verifier: docker
+  verifier_worker: docker
 
-  # Plugins
-  dca_server: local
-  dca_worker: local
-  dca_scheduler: local
-  dca_tx_indexer: local
+  # DCA Plugin - runs in Docker
+  dca_server: docker
+  dca_worker: docker
+  dca_scheduler: docker
+  dca_tx_indexer: docker
 
 # Production endpoints (used when service mode is "production")
 endpoints:
   relay: https://api.vultisig.com/router
   vultiserver: https://api.vultisig.com
 
-# Library paths
-library:
-  # macOS: darwin, Linux: linux
-  dyld_path: ~/dev/vultisig/go-wrappers/includes/darwin
+# Docker image configuration (optional - defaults to latest)
+# Uncomment to pin specific versions
+# images:
+#   verifier: ghcr.io/vultisig/verifier:v0.1.14
+#   verifier_worker: ghcr.io/vultisig/verifier-worker:v0.1.14
+#   dca_server: ghcr.io/vultisig/dca-server:v1.0.81
+#   dca_worker: ghcr.io/vultisig/dca-worker:v1.0.81
+#   dca_scheduler: ghcr.io/vultisig/dca-scheduler:v1.0.81
+#   dca_tx_indexer: ghcr.io/vultisig/dca-tx-indexer:v1.0.81
 
 # Ports (for local services)
 ports:

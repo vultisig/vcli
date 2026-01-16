@@ -9,15 +9,12 @@ VCLI := ./local/vcli.sh
 help:
 	@echo "Vultisig Cluster Management"
 	@echo ""
-	@echo "Local Development:"
+	@echo "Local Development (Docker-based - no repo clones needed!):"
 	@echo "  build             Build vcli"
-	@echo "  start             Start services (default: --mode dev)"
-	@echo "                      --mode local  All services local"
-	@echo "                      --mode dev    Relay+Vultiserver production, rest local"
-	@echo "                      --mode prod   All production endpoints"
+	@echo "  start             Start all services (Docker containers)"
 	@echo "  stop              Stop all services and clean all state"
-	@echo "  status            Show service status"
-	@echo "  logs              Tail all logs"
+	@echo "  status            Show container status"
+	@echo "  logs              Show how to view logs"
 	@echo ""
 	@echo "Infrastructure (Cloud):"
 	@echo "  init              Initialize Terraform"
@@ -220,7 +217,7 @@ clean:
 	rm -f infrastructure/terraform/terraform.tfstate*
 
 # ============== Local Development ==============
-# Note: vcli.sh wrapper auto-sets DYLD_LIBRARY_PATH from cluster.yaml
+# All services run as Docker containers - no local repo clones required!
 
 build:
 	@echo "Building vcli..."
@@ -228,15 +225,9 @@ build:
 	@echo "Built: local/vcli"
 	@echo "Use ./local/vcli.sh (wrapper) or make start/stop/status"
 
-# Start services. Default mode is 'dev' (relay+vultiserver production, rest local)
-# Usage: make start [MODE=local|dev|prod]
+# Start all services in Docker containers
 start: build
-	@if [ ! -f local/cluster.yaml ]; then \
-		echo "ERROR: local/cluster.yaml not found"; \
-		echo "This file should exist in the repo. Try: git checkout local/cluster.yaml"; \
-		exit 1; \
-	fi
-	$(VCLI) start --mode $(or $(MODE),dev)
+	$(VCLI) start
 
 stop:
 	@if [ -f ./local/vcli ]; then \
@@ -245,8 +236,8 @@ stop:
 		echo "vcli not built, stopping docker only..."; \
 	fi
 	@echo "Cleaning up all state..."
+	@docker compose -f local/docker-compose.full.yaml down -v 2>/dev/null || true
 	@docker compose -f local/docker-compose.yaml down -v 2>/dev/null || true
-	@rm -f /tmp/verifier.log /tmp/worker.log /tmp/dca.log /tmp/dca-worker.log /tmp/dca-scheduler.log 2>/dev/null || true
 	@rm -rf ~/.vultisig/vaults/ 2>/dev/null || true
 	@echo "Stopped and cleaned."
 
@@ -254,15 +245,19 @@ status:
 	@if [ -f ./local/vcli ]; then \
 		$(VCLI) status; \
 	else \
-		echo "vcli not built. Run: make build"; \
+		docker compose -f local/docker-compose.full.yaml ps 2>/dev/null || docker compose -f local/docker-compose.yaml ps; \
 	fi
 
 logs:
-	@echo "=== Verifier ===" && tail -20 /tmp/verifier.log 2>/dev/null || echo "(not running)"
+	@echo "Use 'docker logs <container-name>' to view logs"
 	@echo ""
-	@echo "=== Worker ===" && tail -20 /tmp/worker.log 2>/dev/null || echo "(not running)"
+	@echo "Container names:"
+	@echo "  vultisig-verifier      - Verifier API"
+	@echo "  vultisig-worker        - Verifier Worker"
+	@echo "  vultisig-dca           - DCA Plugin Server"
+	@echo "  vultisig-dca-worker    - DCA Plugin Worker"
+	@echo "  vultisig-dca-scheduler - DCA Scheduler"
 	@echo ""
-	@echo "=== DCA ===" && tail -20 /tmp/dca.log 2>/dev/null || echo "(not running)"
-	@echo ""
-	@echo "=== DCA Worker ===" && tail -20 /tmp/dca-worker.log 2>/dev/null || echo "(not running)"
+	@echo "Example: docker logs -f vultisig-verifier"
+	@echo "All logs: docker compose -f local/docker-compose.full.yaml logs -f"
 

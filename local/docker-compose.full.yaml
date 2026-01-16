@@ -1,0 +1,345 @@
+version: "3.8"
+
+# Full local development environment for Vultisig services
+# All services run as Docker containers - no local repo clones needed
+#
+# Usage: docker compose -f docker-compose.full.yaml up -d
+#
+# This file is used by 'vcli start' command
+
+networks:
+  vultisig:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+
+services:
+  # ============================================
+  # SHARED INFRASTRUCTURE
+  # ============================================
+
+  postgres:
+    image: postgres:15
+    container_name: vultisig-postgres
+    environment:
+      POSTGRES_USER: vultisig
+      POSTGRES_PASSWORD: vultisig
+      POSTGRES_DB: vultisig
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - vultisig
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vultisig -d vultisig"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: vultisig-redis
+    command: redis-server --requirepass vultisig
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - vultisig
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "vultisig", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    container_name: vultisig-minio
+    command: server /data --console-address ":9090"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9090:9090"
+    volumes:
+      - minio-data:/data
+    networks:
+      - vultisig
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc
+    container_name: vultisig-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing myminio/vultisig-verifier;
+      mc mb --ignore-existing myminio/vultisig-fee;
+      mc mb --ignore-existing myminio/vultisig-dca;
+      mc mb --ignore-existing myminio/vultisig-vultiserver;
+      exit 0;
+      "
+    networks:
+      - vultisig
+
+  # ============================================
+  # VERIFIER STACK
+  # ============================================
+
+  verifier:
+    image: ghcr.io/vultisig/verifier:latest
+    container_name: vultisig-verifier
+    ports:
+      - "8080:8080"
+      - "8088:8088"  # metrics
+    environment:
+      # Server config
+      VS_VERIFIER_SERVER_HOST: "0.0.0.0"
+      VS_VERIFIER_SERVER_PORT: "8080"
+      VS_VERIFIER_SERVER_JWT_SECRET: "devsecret"
+      VS_VERIFIER_LOG_FORMAT: "text"
+      VS_VERIFIER_AUTH_ENABLED: "true"
+      # Database
+      VS_VERIFIER_DATABASE_DSN: "postgres://vultisig:vultisig@postgres:5432/vultisig-verifier?sslmode=disable"
+      # Redis
+      VS_VERIFIER_REDIS_URI: "redis://:vultisig@redis:6379"
+      # Block Storage (MinIO)
+      VS_VERIFIER_BLOCK_STORAGE_HOST: "http://minio:9000"
+      VS_VERIFIER_BLOCK_STORAGE_REGION: "us-east-1"
+      VS_VERIFIER_BLOCK_STORAGE_ACCESS_KEY: "minioadmin"
+      VS_VERIFIER_BLOCK_STORAGE_SECRET: "minioadmin"
+      VS_VERIFIER_BLOCK_STORAGE_BUCKET: "vultisig-verifier"
+      # Encryption
+      VS_VERIFIER_ENCRYPTION_SECRET: "dev-encryption-secret-32b"
+      # Metrics
+      VS_VERIFIER_METRICS_ENABLED: "true"
+      VS_VERIFIER_METRICS_HOST: "0.0.0.0"
+      VS_VERIFIER_METRICS_PORT: "8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    networks:
+      - vultisig
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/plugins"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  worker:
+    image: ghcr.io/vultisig/verifier-worker:latest
+    container_name: vultisig-worker
+    ports:
+      - "8089:8089"  # metrics
+    environment:
+      VS_WORKER_LOG_FORMAT: "text"
+      # Database
+      VS_WORKER_DATABASE_DSN: "postgres://vultisig:vultisig@postgres:5432/vultisig-verifier?sslmode=disable"
+      # Redis
+      VS_WORKER_REDIS_URI: "redis://:vultisig@redis:6379"
+      # Block Storage (MinIO)
+      VS_WORKER_BLOCK_STORAGE_HOST: "http://minio:9000"
+      VS_WORKER_BLOCK_STORAGE_REGION: "us-east-1"
+      VS_WORKER_BLOCK_STORAGE_ACCESS_KEY: "minioadmin"
+      VS_WORKER_BLOCK_STORAGE_SECRET: "minioadmin"
+      VS_WORKER_BLOCK_STORAGE_BUCKET: "vultisig-verifier"
+      # Vault Service (TSS)
+      VS_WORKER_VAULT_SERVICE_RELAY_SERVER: "https://api.vultisig.com/router"
+      VS_WORKER_VAULT_SERVICE_LOCAL_PARTY_PREFIX: "verifier-dev"
+      VS_WORKER_VAULT_SERVICE_ENCRYPTION_SECRET: "dev-encryption-secret-32b"
+      VS_WORKER_VAULT_SERVICE_DO_SETUP_MSG: "false"
+      # Metrics
+      VS_WORKER_METRICS_ENABLED: "true"
+      VS_WORKER_METRICS_HOST: "0.0.0.0"
+      VS_WORKER_METRICS_PORT: "8089"
+    depends_on:
+      verifier:
+        condition: service_healthy
+    networks:
+      - vultisig
+
+  # ============================================
+  # DCA PLUGIN STACK
+  # ============================================
+
+  dca-server:
+    image: ghcr.io/vultisig/dca-server:latest
+    container_name: vultisig-dca
+    ports:
+      - "8082:8082"
+      - "8181:8181"  # metrics
+    environment:
+      MODE: "swap"
+      LOG_FORMAT: "text"
+      # Server
+      SERVER_PORT: "8082"
+      SERVER_HOST: "0.0.0.0"
+      SERVER_TASKQUEUENAME: "dca_plugin_queue"
+      SERVER_ENCRYPTIONSECRET: "dev-encryption-secret-32b"
+      # Database
+      POSTGRES_DSN: "postgres://vultisig:vultisig@postgres:5432/vultisig-dca?sslmode=disable"
+      # Redis
+      REDIS_URI: "redis://:vultisig@redis:6379"
+      # Block Storage
+      BLOCKSTORAGE_HOST: "http://minio:9000"
+      BLOCKSTORAGE_REGION: "us-east-1"
+      BLOCKSTORAGE_ACCESSKEY: "minioadmin"
+      BLOCKSTORAGE_SECRETKEY: "minioadmin"
+      BLOCKSTORAGE_BUCKET: "vultisig-dca"
+      # Verifier
+      VERIFIER_URL: "http://verifier:8080"
+      # Metrics
+      METRICS_ENABLED: "true"
+      METRICS_HOST: "0.0.0.0"
+      METRICS_PORT: "8181"
+    depends_on:
+      verifier:
+        condition: service_healthy
+    networks:
+      - vultisig
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/spec"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  dca-worker:
+    image: ghcr.io/vultisig/dca-worker:latest
+    container_name: vultisig-dca-worker
+    ports:
+      - "8183:8183"  # metrics
+    environment:
+      MODE: "swap"
+      LOG_FORMAT: "text"
+      # Task Queue
+      TASK_QUEUE_NAME: "dca_plugin_queue"
+      # Database
+      POSTGRES_DSN: "postgres://vultisig:vultisig@postgres:5432/vultisig-dca?sslmode=disable"
+      # Redis
+      REDIS_URI: "redis://:vultisig@redis:6379"
+      # Verifier
+      VERIFIER_URL: "http://verifier:8080"
+      VERIFIER_PARTYPREFIX: "verifier"
+      VERIFIER_SENDTOKEN: "local-dev-dca-apikey"
+      VERIFIER_SWAPTOKEN: "local-dev-dca-apikey"
+      # Vault Service (TSS)
+      VAULTSERVICE_LOCALPARTYPREFIX: "dca-worker"
+      VAULTSERVICE_RELAY_SERVER: "https://api.vultisig.com/router"
+      VAULTSERVICE_ENCRYPTIONSECRET: "dev-encryption-secret-32b"
+      VAULTSERVICE_DOSETUPMSG: "true"
+      # Block Storage
+      BLOCKSTORAGE_HOST: "http://minio:9000"
+      BLOCKSTORAGE_REGION: "us-east-1"
+      BLOCKSTORAGE_ACCESSKEY: "minioadmin"
+      BLOCKSTORAGE_SECRETKEY: "minioadmin"
+      BLOCKSTORAGE_BUCKET: "vultisig-dca"
+      # Metrics
+      METRICS_ENABLED: "true"
+      METRICS_HOST: "0.0.0.0"
+      METRICS_PORT: "8183"
+      # RPC Endpoints
+      THORCHAIN_URL: "https://thornode.ninerealms.com"
+      ONEINCH_BASEURL: "https://api.1inch.dev/swap/v6.0"
+      MAYACHAIN_URL: "https://mayanode.mayachain.info"
+      RPC_ETHEREUM_URL: "https://ethereum-rpc.publicnode.com"
+      RPC_ARBITRUM_URL: "https://arbitrum-one-rpc.publicnode.com"
+      RPC_BASE_URL: "https://base-rpc.publicnode.com"
+      RPC_POLYGON_URL: "https://polygon-bor-rpc.publicnode.com"
+      RPC_BSC_URL: "https://bsc-rpc.publicnode.com"
+      RPC_AVALANCHE_URL: "https://avalanche-c-chain-rpc.publicnode.com"
+      RPC_OPTIMISM_URL: "https://optimism-rpc.publicnode.com"
+      RPC_SOLANA_URL: "https://api.mainnet-beta.solana.com"
+      RPC_BITCOIN_URL: "https://mempool.space/api"
+      # UTXO Chain Providers
+      BTC_BLOCKCHAIRURL: "https://api.vultisig.com/blockchair"
+      LTC_BLOCKCHAIRURL: "https://api.vultisig.com/blockchair"
+      DOGE_BLOCKCHAIRURL: "https://api.vultisig.com/blockchair"
+      # Solana
+      SOLANA_JUPITERAPIURL: "https://quote-api.jup.ag/v6"
+    depends_on:
+      dca-server:
+        condition: service_healthy
+    networks:
+      - vultisig
+
+  dca-scheduler:
+    image: ghcr.io/vultisig/dca-scheduler:latest
+    container_name: vultisig-dca-scheduler
+    ports:
+      - "8184:8184"  # health
+      - "8185:8185"  # metrics
+    environment:
+      LOG_FORMAT: "text"
+      # Database
+      POSTGRES_DSN: "postgres://vultisig:vultisig@postgres:5432/vultisig-dca?sslmode=disable"
+      # Redis
+      REDIS_URI: "redis://:vultisig@redis:6379"
+      # Task Queue
+      TASK_QUEUE_NAME: "dca_plugin_queue"
+      # Health
+      HEALTHPORT: "8184"
+      # Metrics
+      METRICS_ENABLED: "true"
+      METRICS_HOST: "0.0.0.0"
+      METRICS_PORT: "8185"
+    depends_on:
+      dca-server:
+        condition: service_healthy
+    networks:
+      - vultisig
+
+  dca-tx-indexer:
+    image: ghcr.io/vultisig/dca-tx-indexer:latest
+    container_name: vultisig-dca-tx-indexer
+    ports:
+      - "8186:8186"  # health
+      - "8187:8187"  # metrics
+    environment:
+      LOG_FORMAT: "text"
+      # Health
+      HEALTHPORT: "8186"
+      # Metrics
+      METRICS_ENABLED: "true"
+      METRICS_HOST: "0.0.0.0"
+      METRICS_PORT: "8187"
+      # Database (nested under Base)
+      BASE_DATABASE_DSN: "postgres://vultisig:vultisig@postgres:5432/vultisig-dca?sslmode=disable"
+      # TX Indexer settings
+      BASE_INTERVAL: "10s"
+      BASE_ITERATIONTIMEOUT: "30s"
+      BASE_MARKLOSTAFTER: "1h"
+      BASE_CONCURRENCY: "5"
+      # RPC endpoints
+      BASE_RPC_ETHEREUM_URL: "https://ethereum-rpc.publicnode.com"
+      BASE_RPC_ARBITRUM_URL: "https://arbitrum-one-rpc.publicnode.com"
+      BASE_RPC_AVALANCHE_URL: "https://avalanche-c-chain-rpc.publicnode.com"
+      BASE_RPC_BSC_URL: "https://bsc-rpc.publicnode.com"
+      BASE_RPC_BASE_URL: "https://base-rpc.publicnode.com"
+      BASE_RPC_OPTIMISM_URL: "https://optimism-rpc.publicnode.com"
+      BASE_RPC_POLYGON_URL: "https://polygon-bor-rpc.publicnode.com"
+      BASE_RPC_BITCOIN_URL: "https://bitcoin-mainnet.public.blastapi.io"
+      BASE_RPC_SOLANA_URL: "https://solana-rpc.publicnode.com"
+    depends_on:
+      dca-server:
+        condition: service_healthy
+    networks:
+      - vultisig

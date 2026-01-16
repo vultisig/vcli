@@ -10,6 +10,13 @@ import (
 )
 
 func main() {
+	// Ensure go-wrappers CGO libraries are downloaded and library path is set.
+	// This must happen before any CGO code is loaded.
+	if err := cmd.SetupLibraryPath(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to setup go-wrappers: %v\n", err)
+		fmt.Fprintf(os.Stderr, "TSS operations may not work. Run 'vcli start' to retry download.\n")
+	}
+
 	rootCmd := &cobra.Command{
 		Use:   "vcli",
 		Short: "Vultisig CLI for local plugin development and testing",
