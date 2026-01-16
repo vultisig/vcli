@@ -1011,12 +1011,103 @@ func runPolicyStatus(policyID string) error {
 	if len(txs) == 0 {
 		fmt.Printf("  No transactions found\n")
 	} else {
-		for _, tx := range txs {
-			fmt.Printf("  • %s | %s | %s\n", tx.Status, tx.TxHash, tx.CreatedAt)
+		for i, tx := range txs {
+			fmt.Printf("\n  Transaction %d:\n", i+1)
+			fmt.Printf("    TX Hash:    %s\n", tx.TxHash)
+			fmt.Printf("    Status:     %s\n", tx.Status)
+			fmt.Printf("    On-chain:   %s\n", tx.OnChainStatus)
+			fmt.Printf("    Created:    %s\n", tx.CreatedAt)
+			if tx.TxHash != "" && tx.TxHash != "<nil>" && tx.TxHash != "NULL" {
+				if explorerURL := getExplorerURL(policyID, tx.TxHash); explorerURL != "" {
+					fmt.Printf("    Explorer:   %s\n", explorerURL)
+				}
+			}
 		}
+		fmt.Println()
 	}
 
 	return nil
+}
+
+func getExplorerURL(policyID, txHash string) string {
+	// Try to fetch policy to determine chain
+	cfg, err := LoadConfig()
+	if err != nil {
+		return ""
+	}
+
+	authHeader, err := GetAuthHeader()
+	if err != nil {
+		return ""
+	}
+
+	policyURL := fmt.Sprintf("%s/plugin/policy/%s", cfg.Verifier, policyID)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", policyURL, nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", authHeader)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var policyResp struct {
+		Data struct {
+			Recipe string `json:"recipe"`
+		} `json:"data"`
+	}
+	body, _ := io.ReadAll(resp.Body)
+	json.Unmarshal(body, &policyResp)
+
+	// Decode recipe to get chain info
+	if policyResp.Data.Recipe != "" {
+		recipeBytes, err := base64.StdEncoding.DecodeString(policyResp.Data.Recipe)
+		if err == nil {
+			// Try to parse as JSON to extract chain
+			var recipe map[string]interface{}
+			if json.Unmarshal(recipeBytes, &recipe) == nil {
+				if from, ok := recipe["from"].(map[string]interface{}); ok {
+					if chain, ok := from["chain"].(string); ok {
+						return getExplorerURLForChain(chain, txHash)
+					}
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
+func getExplorerURLForChain(chain, txHash string) string {
+	chainLower := strings.ToLower(chain)
+	switch chainLower {
+	case "ethereum", "eth":
+		return fmt.Sprintf("https://etherscan.io/tx/%s", txHash)
+	case "arbitrum", "arb":
+		return fmt.Sprintf("https://arbiscan.io/tx/%s", txHash)
+	case "base":
+		return fmt.Sprintf("https://basescan.org/tx/%s", txHash)
+	case "polygon", "matic":
+		return fmt.Sprintf("https://polygonscan.com/tx/%s", txHash)
+	case "bsc", "bnb", "binance":
+		return fmt.Sprintf("https://bscscan.com/tx/%s", txHash)
+	case "avalanche", "avax":
+		return fmt.Sprintf("https://snowtrace.io/tx/%s", txHash)
+	case "optimism", "op":
+		return fmt.Sprintf("https://optimistic.etherscan.io/tx/%s", txHash)
+	case "bitcoin", "btc":
+		return fmt.Sprintf("https://blockstream.info/tx/%s", txHash)
+	case "solana", "sol":
+		return fmt.Sprintf("https://solscan.io/tx/%s", txHash)
+	default:
+		return ""
+	}
 }
 
 func runPolicyTransactions(policyID string, limit int) error {
@@ -1035,12 +1126,23 @@ func runPolicyTransactions(policyID string, limit int) error {
 
 	fmt.Printf("\nFound %d transactions:\n\n", len(txs))
 	for i, tx := range txs {
-		fmt.Printf("%d. TX Hash: %s\n", i+1, tx.TxHash)
-		fmt.Printf("   Status: %s | On-chain: %s\n", tx.Status, tx.OnChainStatus)
-		fmt.Printf("   Created: %s\n", tx.CreatedAt)
-		if tx.TxHash != "" && tx.TxHash != "<nil>" {
-			fmt.Printf("   Explorer: https://etherscan.io/tx/%s\n", tx.TxHash)
+		fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+		fmt.Printf("│ Transaction %d                                                  │\n", i+1)
+		fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+		fmt.Printf("│                                                                 │\n")
+		fmt.Printf("│  TX Hash:     %s\n", tx.TxHash)
+		fmt.Printf("│                                                                 │\n")
+		fmt.Printf("│  Status:      %-52s │\n", tx.Status)
+		fmt.Printf("│  On-chain:    %-52s │\n", tx.OnChainStatus)
+		fmt.Printf("│  Created:     %-52s │\n", tx.CreatedAt)
+		if tx.TxHash != "" && tx.TxHash != "<nil>" && tx.TxHash != "NULL" {
+			if explorerURL := getExplorerURL(policyID, tx.TxHash); explorerURL != "" {
+				fmt.Printf("│                                                                 │\n")
+				fmt.Printf("│  Explorer:   %s\n", explorerURL)
+			}
 		}
+		fmt.Printf("│                                                                 │\n")
+		fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
 		fmt.Println()
 	}
 
