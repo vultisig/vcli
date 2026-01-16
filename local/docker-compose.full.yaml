@@ -100,7 +100,7 @@ services:
   # ============================================
 
   verifier:
-    image: ghcr.io/vultisig/verifier:latest
+    image: ghcr.io/vultisig/verifier/verifier:latest
     container_name: vultisig-verifier
     ports:
       - "8080:8080"
@@ -145,7 +145,7 @@ services:
       start_period: 30s
 
   worker:
-    image: ghcr.io/vultisig/verifier-worker:latest
+    image: ghcr.io/vultisig/verifier/worker:latest
     container_name: vultisig-worker
     ports:
       - "8089:8089"  # metrics
@@ -181,7 +181,7 @@ services:
   # ============================================
 
   dca-server:
-    image: ghcr.io/vultisig/dca-server:latest
+    image: ghcr.io/vultisig/app-recurring/server:latest
     container_name: vultisig-dca
     ports:
       - "8082:8082"
@@ -223,7 +223,7 @@ services:
       start_period: 20s
 
   dca-worker:
-    image: ghcr.io/vultisig/dca-worker:latest
+    image: ghcr.io/vultisig/app-recurring/worker:latest
     container_name: vultisig-dca-worker
     ports:
       - "8183:8183"  # metrics
@@ -282,7 +282,7 @@ services:
       - vultisig
 
   dca-scheduler:
-    image: ghcr.io/vultisig/dca-scheduler:latest
+    image: ghcr.io/vultisig/app-recurring/scheduler:latest
     container_name: vultisig-dca-scheduler
     ports:
       - "8184:8184"  # health
@@ -308,7 +308,7 @@ services:
       - vultisig
 
   dca-tx-indexer:
-    image: ghcr.io/vultisig/dca-tx-indexer:latest
+    image: ghcr.io/vultisig/app-recurring/tx_indexer:latest
     container_name: vultisig-dca-tx-indexer
     ports:
       - "8186:8186"  # health

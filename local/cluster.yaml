@@ -34,12 +34,12 @@ endpoints:
 # Docker image configuration (optional - defaults to latest)
 # Uncomment to pin specific versions
 # images:
-#   verifier: ghcr.io/vultisig/verifier:v0.1.14
-#   verifier_worker: ghcr.io/vultisig/verifier-worker:v0.1.14
-#   dca_server: ghcr.io/vultisig/dca-server:v1.0.81
-#   dca_worker: ghcr.io/vultisig/dca-worker:v1.0.81
-#   dca_scheduler: ghcr.io/vultisig/dca-scheduler:v1.0.81
-#   dca_tx_indexer: ghcr.io/vultisig/dca-tx-indexer:v1.0.81
+#   verifier: ghcr.io/vultisig/verifier/verifier:v0.1.14
+#   verifier_worker: ghcr.io/vultisig/verifier/worker:v0.1.14
+#   dca_server: ghcr.io/vultisig/app-recurring/server:v1.0.81
+#   dca_worker: ghcr.io/vultisig/app-recurring/worker:v1.0.81
+#   dca_scheduler: ghcr.io/vultisig/app-recurring/scheduler:v1.0.81
+#   dca_tx_indexer: ghcr.io/vultisig/app-recurring/tx_indexer:v1.0.81
 
 # Ports (for local services)
 ports:
