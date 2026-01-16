@@ -737,7 +737,8 @@ func runVaultImport(file, password string) error {
 	fmt.Println("│                                                                 │")
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 	fmt.Println()
-	fmt.Println("Next: ./vcli plugin install <plugin-id> --password <password>")
+	fmt.Println("Next: ./vcli vault details                    # View addresses and balances")
+	fmt.Println("      ./vcli plugin install <plugin-id> -p   # Install a plugin")
 
 	return nil
 }
@@ -1508,6 +1509,8 @@ func runVaultDetails(chainFilter string) error {
 			}
 		}
 	}
+
+	fmt.Println("Next: ./vcli plugin install <plugin-id> --password <password>")
 
 	return nil
 }

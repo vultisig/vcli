@@ -375,7 +375,8 @@ func runPluginInstall(pluginIDOrAlias string, password string) error {
 	fmt.Println("│                                                                 │")
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 	fmt.Println()
-	fmt.Println("Next: ./vcli policy add --plugin", pluginID, "--policy-file policy.json --password <password>")
+	fmt.Println("Next: vcli policy generate --from <asset> --to <asset> --amount <amount> --output policy.json")
+	fmt.Println("      vcli policy add --plugin", pluginID, "--policy-file policy.json --password <password>")
 
 	return nil
 }
@@ -536,8 +537,8 @@ func runPluginUninstall(pluginID string) error {
 	fmt.Println("│                                                                 │")
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 	fmt.Println()
-	fmt.Println("Local vault unchanged (still has original 2-of-2 keyshares).")
-	fmt.Println("Ready to reinstall plugin with: vcli plugin install", pluginID, "-p <password>")
+	fmt.Println("Next: make stop                               # Stop all services")
+	fmt.Println("      vcli plugin install", pluginID, "-p   # Or reinstall plugin")
 
 	return nil
 }

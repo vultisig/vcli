@@ -151,6 +151,25 @@ Import your vault into the local environment.
 
 ❌ **If validation fails:** Verify your `.vult` file is in `local/keyshares/` and password is correct. The vault must be a Fast Vault.
 
+**Inspect your vault (recommended for first-time users):**
+
+Before creating policies, view your wallet addresses and token balances:
+
+```bash
+# Show all addresses and balances
+./local/vcli.sh vault details
+
+# Or check a specific chain
+./local/vcli.sh vault details --chain ethereum
+```
+
+This displays:
+- Wallet addresses for each supported chain (Ethereum, Bitcoin, Solana, etc.)
+- Native token balances (ETH, BTC, SOL, etc.)
+- Common ERC20 token balances (USDT, USDC, DAI, etc.)
+
+Use this information when creating swap policies in Step 4.
+
 ---
 
 ### Step 3: INSTALL
@@ -202,42 +221,47 @@ When done testing policies, continue to Step 8 (UNINSTALL) before stopping.
 
 ### Step 4: GENERATE
 
-Generate (or customize) a policy configuration file.
+Generate a policy configuration file using the `vcli policy generate` command.
 
 ```bash
-# Use an existing template
-cp local/policies/test-one-time-policy.json my-policy.json
+# Generate a swap policy (RECOMMENDED)
+./local/vcli.sh policy generate --from eth --to usdc --amount 0.01 --output my-policy.json
 
-# Or create your own (see example below)
+# Generate with custom frequency
+./local/vcli.sh policy generate --from usdt --to btc --amount 10 --frequency daily --output my-policy.json
 ```
 
-**Example policy JSON:**
-```json
-{
-  "recipe": {
-    "from_chain": "ethereum",
-    "to_chain": "ethereum",
-    "from_asset": "ETH",
-    "to_asset": "USDC",
-    "amount": "0.001",
-    "frequency": "daily"
-  },
-  "billing": {
-    "type": "one_time",
-    "amount": 0
-  }
-}
+**Why use `policy generate`:**
+- Auto-derives wallet addresses from your imported vault
+- Converts amounts to smallest units automatically
+- Validates the recipe with the plugin server
+- Supports asset shortcuts: `eth`, `btc`, `sol`, `usdc`, `usdt`, `dai`, etc.
+
+**Asset shortcuts:**
+```
+eth, btc, sol, rune, bnb, avax, matic  - Native tokens
+usdc, usdt, dai                        - Stablecoins (Ethereum)
+usdc:arbitrum                          - Specify chain explicitly
 ```
 
-**Validation:**
-```bash
-# Verify JSON is valid
-cat my-policy.json | python3 -m json.tool > /dev/null && echo "Valid JSON"
+**Frequency options:** `one-time` (default), `minutely`, `hourly`, `daily`, `weekly`, `bi-weekly`, `monthly`
+
+**Example output:**
+```
+Policy written to my-policy.json
+
+Policy Summary:
+  From: 0.01 eth (Ethereum)
+        0x2d63088Dacce3a87b0966982D52141AEe53be224 [FastPlugin1]
+  To:   usdc (Ethereum)
+        0x2d63088Dacce3a87b0966982D52141AEe53be224 [FastPlugin1]
+  Amount: 10000000000000000 (smallest unit)
+  Frequency: one-time
 ```
 
-✅ **Expected:** "Valid JSON" printed with no errors.
+✅ **Expected:** Policy JSON file created with addresses auto-filled.
 
-❌ **If validation fails:** Fix JSON syntax errors in your policy file.
+❌ **If validation fails:** Check that your vault is imported and the asset names are valid.
 
 ---
 
