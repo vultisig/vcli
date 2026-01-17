@@ -1,99 +1,104 @@
-# vcli
+# vcli - Local Development Environment
 
-Vultisig CLI - Local development environment for testing Vultisig plugins.
+Vultisig CLI for local development and testing of Vultisig plugins.
 
 ---
 
-## Quick Start (For Developers)
+## Why Local Development?
+
+The Vultisig stack is tightly coupled:
+
+- **vcli** depends on verifier (TSS protocols)
+- **verifier** depends on recipes (chain abstraction)
+- **app-recurring** depends on recipes + verifier (policy execution)
+- All depend on **go-wrappers** (cryptographic primitives)
+
+Changes in one repo often require changes in others. Docker images create version drift - the local vcli binary may be incompatible with pre-built Docker images due to protocol or signature changes.
+
+Local development lets you:
+- Edit any repo and test immediately
+- Debug with IDE breakpoints
+- Use native architecture (no emulation issues on ARM Macs)
+
+---
+
+## Prerequisites
+
+- Go 1.24+
+- Docker (for postgres, redis, minio only)
+- Git
+
+---
+
+## Setup (One-Time)
+
+Clone all repos as siblings:
 
 ```bash
-# Clone repos as siblings
+mkdir vultisig && cd vultisig
 git clone https://github.com/vultisig/vcli.git
 git clone https://github.com/vultisig/verifier.git
 git clone https://github.com/vultisig/app-recurring.git
+git clone https://github.com/vultisig/recipes.git
+git clone https://github.com/vultisig/go-wrappers.git
+```
 
-# Start everything
+Directory structure:
+```
+vultisig/
+├── vcli/           # This tool
+├── verifier/       # Policy verification + TSS
+├── app-recurring/  # DCA plugin
+├── recipes/        # Chain abstraction layer
+└── go-wrappers/    # Rust crypto (auto-downloaded, but useful to have)
+```
+
+---
+
+## Quick Start
+
+```bash
 cd vcli
-make start
+make start    # Starts postgres/redis/minio in Docker, services run natively
 ```
-
-That's it! Infrastructure runs in Docker, services run natively with `go run`.
 
 ---
 
-## Build Modes
+## How It Works
 
-vcli supports three build modes for different use cases:
+`make start`:
+1. Starts infrastructure in Docker (postgres, redis, minio)
+2. Runs verifier (API + worker) natively with `go run`
+3. Runs app-recurring (server + worker + scheduler) natively with `go run`
 
-| Mode | Command | What It Does | Best For |
-|------|---------|--------------|----------|
-| **local** (default) | `make start` | Infra in Docker, services run natively with `go run` | Active development |
-| **volume** | `make start build=volume` | Full stack in Docker with volume mounts | Testing Docker config with hot-reload |
-| **image** | `make start build=image` | Full stack in Docker with GHCR images | CI/CD, quick testing without repos |
-
-### build=local (Default) — Active Development
-
-**Best for:** Day-to-day development when you're making changes to verifier or app-recurring.
-
-```bash
-make start              # or explicitly: make start build=local
-```
-
-**What happens:**
-1. Starts postgres, redis, minio in Docker
-2. Runs verifier and app-recurring services natively with `go run`
-3. Edit code → restart to apply (or use your own hot-reload setup)
-
-**Requirements:**
-```
-your-folder/
-  ├── vcli/           # this repo
-  ├── verifier/       # git clone https://github.com/vultisig/verifier.git
-  └── app-recurring/  # git clone https://github.com/vultisig/app-recurring.git
-```
-
-**Logs:** `tail -f local/logs/*.log`
-
-### build=volume — Docker with Hot-Reload
-
-**Best for:** Testing Docker configuration while still iterating on code.
-
-```bash
-make start build=volume
-```
-
-**What happens:**
-1. Builds Docker images from local source
-2. Volume-mounts source directories into containers
-3. Uses `air` for hot-reload (~2-3s rebuild on file change)
-
-**Requirements:** Same sibling repos as `build=local`
-
-**Logs:** `docker logs -f vultisig-verifier`
-
-### build=image — Pre-built GHCR Images
-
-**Best for:** Quick testing, CI/CD, or when you don't need to modify verifier/app-recurring.
-
-```bash
-make start build=image
-```
-
-**What happens:**
-1. Pulls pre-built images from `ghcr.io/vultisig/...`
-2. No local repos required
-3. No ability to modify code (use for testing only)
-
-**Requirements:** Just Docker. No sibling repos needed.
-
-**Logs:** `docker logs -f vultisig-verifier`
+Logs: `tail -f local/logs/*.log`
 
 ---
 
-## Stopping Services
+## Developing
+
+Edit code in any sibling repo, then:
+```bash
+make stop && make start
+```
+
+Or restart individual services manually.
+
+---
+
+## Vault Requirement
+
+You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig mobile app:
+
+1. Create a vault in the Vultisig mobile app with "Fast Vault" enabled
+2. Export the vault backup (Settings -> Export -> Backup file)
+3. Transfer the `.vult` file to `local/keyshares/` directory
+
+## Initial Setup (One-Time)
 
 ```bash
-make stop    # Stops everything (Docker containers + native processes) and cleans state
+# Put your vault file in the keyshares directory
+cp ~/Downloads/MyVault.vult local/keyshares/
 ```
 
 ---
@@ -123,23 +128,6 @@ The bracketed steps (policy testing) can be repeated as many times as needed. Ev
 
 ---
 
-## Vault Requirement
-
-You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig mobile app:
-
-1. Create a vault in the Vultisig mobile app with "Fast Vault" enabled
-2. Export the vault backup (Settings -> Export -> Backup file)
-3. Transfer the `.vult` file to `local/keyshares/` directory
-
-## Initial Setup (One-Time)
-
-```bash
-# Put your vault file in the keyshares directory
-cp ~/Downloads/MyVault.vult local/keyshares/
-```
-
----
-
 ## E2E Testing Flow
 
 Follow these steps **in order, every time**. Do not skip steps.
@@ -152,22 +140,18 @@ Start all services (infrastructure + application services).
 make start
 ```
 
-This starts Docker containers for:
-- Infrastructure: PostgreSQL, Redis, MinIO
-- Verifier: API server and worker
-- DCA Plugin: Server, worker, scheduler, tx-indexer
+This starts:
+- Infrastructure in Docker: PostgreSQL, Redis, MinIO
+- Services natively: Verifier API/worker, DCA plugin server/worker/scheduler
 
 **Validation:**
 ```bash
 make status
 ```
 
-✅ **Expected:** All containers show as "running":
-- vultisig-postgres, vultisig-redis, vultisig-minio
-- vultisig-verifier, vultisig-worker
-- vultisig-dca, vultisig-dca-worker, vultisig-dca-scheduler
+✅ **Expected:** Infrastructure containers show as "running" (postgres, redis, minio)
 
-❌ **If validation fails:** Check logs with `docker logs <container-name>`. Fix the issue and restart with `make stop && make start`.
+❌ **If validation fails:** Check logs with `tail -f local/logs/*.log`. Fix the issue and restart with `make stop && make start`.
 
 ---
 
@@ -229,8 +213,8 @@ Install a plugin. This performs a 4-party TSS reshare.
 **What happens:** A 4-party reshare occurs between:
 - CLI (your local vault share)
 - Fast Vault Server (production cloud backup)
-- Verifier Worker (Docker container)
-- DCA Plugin Worker (Docker container)
+- Verifier Worker (running locally)
+- DCA Plugin Worker (running locally)
 
 **Validation:**
 ```bash
@@ -242,7 +226,7 @@ Install a plugin. This performs a 4-party TSS reshare.
 - Report shows keyshare files stored in MinIO (4 parties)
 - Signers list now includes verifier and plugin parties
 
-❌ **If validation fails:** Check that containers are running (`make status`). Check logs with `docker logs vultisig-worker`. **Do not attempt to fix manually** - run `make stop && make start` and restart from Step 1.
+❌ **If validation fails:** Check logs with `tail -f local/logs/*.log`. **Do not attempt to fix manually** - run `make stop && make start` and restart from Step 1.
 
 ---
 
@@ -327,7 +311,7 @@ Add the policy to the installed plugin.
 
 ✅ **Expected:** Your policy appears in the list with a policy ID.
 
-❌ **If validation fails:** Check that the plugin is installed (Step 3). Check verifier logs with `docker logs vultisig-verifier`.
+❌ **If validation fails:** Check that the plugin is installed (Step 3). Check logs with `tail -f local/logs/verifier.log`.
 
 ---
 
@@ -349,8 +333,8 @@ Monitor the policy execution and check its status.
 ./local/vcli.sh policy list --plugin vultisig-dca-0000
 
 # Watch logs in real-time
-docker logs -f vultisig-dca-worker
-docker logs -f vultisig-dca-scheduler
+tail -f local/logs/dca-worker.log
+tail -f local/logs/dca-scheduler.log
 ```
 
 **Next steps:**
@@ -468,42 +452,37 @@ make status
 
 ## Services & Ports
 
-| Service | Port | Container Name |
-|---------|------|----------------|
-| PostgreSQL | 5432 | vultisig-postgres |
-| Redis | 6379 | vultisig-redis |
-| MinIO | 9000 | vultisig-minio |
-| MinIO Console | 9090 | vultisig-minio |
-| Verifier API | 8080 | vultisig-verifier |
-| Verifier Worker | - | vultisig-worker |
-| DCA Server | 8082 | vultisig-dca |
-| DCA Worker | - | vultisig-dca-worker |
-| DCA Scheduler | - | vultisig-dca-scheduler |
-| DCA TX Indexer | - | vultisig-dca-tx-indexer |
+| Service | Port | Notes |
+|---------|------|-------|
+| PostgreSQL | 5432 | Docker container |
+| Redis | 6379 | Docker container |
+| MinIO | 9000 | Docker container |
+| MinIO Console | 9090 | Docker container |
+| Verifier API | 8080 | Native (go run) |
+| Verifier Worker | - | Native (go run) |
+| DCA Server | 8082 | Native (go run) |
+| DCA Worker | - | Native (go run) |
+| DCA Scheduler | - | Native (go run) |
+| DCA TX Indexer | - | Native (go run) |
 
 ## Queue Isolation (4-Party TSS)
 
 When installing a plugin, a 4-party TSS reshare occurs:
 - **CLI** (vcli)
 - **Fast Vault Server** (production)
-- **Verifier Worker** (listens on `default_queue`)
-- **DCA Plugin Worker** (listens on `dca_plugin_queue`)
+- **Verifier Worker** (running locally)
+- **DCA Plugin Worker** (running locally)
 
 The workers use separate task queues to prevent task stealing.
 
 ## Make Commands
 
 ```bash
-# Build modes
-make start                  # Default: build=local (infra Docker, services native)
-make start build=local      # Infra in Docker, services run natively with go run
-make start build=volume     # Full stack in Docker with volume mounts + hot-reload
-make start build=image      # Full stack in Docker with GHCR images
-
-# Other commands
-make stop                   # Stop all services and clean state
-make status                 # Show container status
-make help                   # Show all available commands
+make start     # Start infra in Docker + services natively
+make stop      # Stop all services and clean state
+make status    # Show infrastructure container status
+make logs      # Show how to view service logs
+make help      # Show all available commands
 ```
 
 ## Directory Structure
@@ -514,39 +493,39 @@ vcli/
 │   ├── cmd/vcli/                  # vcli source code
 │   ├── scripts/
 │   │   ├── vcli.sh                # vcli wrapper script
-│   │   └── run-services.sh        # Runs services natively (build=local)
+│   │   └── run-services.sh        # Runs services natively
 │   ├── keyshares/                 # Put your .vult files here
 │   ├── policies/                  # Policy JSON templates
 │   ├── configs/                   # Service environment files (*.env)
-│   ├── logs/                      # Native service logs (build=local)
+│   ├── logs/                      # Service logs
 │   ├── docker-compose.yaml        # Infrastructure only (postgres, redis, minio)
-│   ├── docker-compose.local.yaml  # Full stack with volume mounts (build=volume)
-│   ├── docker-compose.full.yaml   # Full stack with GHCR images (build=image)
 │   └── cluster.yaml               # Cluster configuration
 ├── Makefile                       # Main entry point: make start/stop/status
 └── README.md
 ```
 
-**Sibling repos (required for build=local and build=volume):**
+**Sibling repos (required):**
 ```
-your-folder/
+vultisig/
 ├── vcli/
 ├── verifier/
-└── app-recurring/
+├── app-recurring/
+├── recipes/
+└── go-wrappers/
 ```
 
 ## Troubleshooting
 
-### Container Won't Start
+### Service Won't Start
 
 ```bash
-# Check container logs
-docker logs vultisig-verifier
-docker logs vultisig-worker
-docker logs vultisig-dca
+# Check service logs
+tail -f local/logs/verifier.log
+tail -f local/logs/worker.log
+tail -f local/logs/dca-server.log
 
-# Check all container status
-docker compose -f local/docker-compose.full.yaml ps
+# Check infrastructure containers
+docker compose -f local/docker-compose.yaml ps
 ```
 
 ### Port Conflicts
@@ -567,15 +546,15 @@ docker exec vultisig-redis redis-cli -a vultisig KEYS "asynq:*queue*"
 ### View Logs
 
 ```bash
-# View specific container logs
-docker logs -f vultisig-verifier      # Verifier server
-docker logs -f vultisig-worker        # Verifier worker
-docker logs -f vultisig-dca           # DCA plugin server
-docker logs -f vultisig-dca-worker    # DCA plugin worker
-docker logs -f vultisig-dca-scheduler # DCA scheduler
+# View specific service logs
+tail -f local/logs/verifier.log      # Verifier server
+tail -f local/logs/worker.log        # Verifier worker
+tail -f local/logs/dca-server.log    # DCA plugin server
+tail -f local/logs/dca-worker.log    # DCA plugin worker
+tail -f local/logs/dca-scheduler.log # DCA scheduler
 
 # View all logs
-docker compose -f local/docker-compose.full.yaml logs -f
+tail -f local/logs/*.log
 ```
 
 ### go-wrappers Library

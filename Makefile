@@ -10,10 +10,7 @@ help:
 	@echo "Vultisig Cluster Management"
 	@echo ""
 	@echo "Local Development:"
-	@echo "  make start               Start services (default: build=local)"
-	@echo "  make start build=local   Infra in Docker + services run natively with go run"
-	@echo "  make start build=volume  Full stack in Docker with volume mounts + hot-reload"
-	@echo "  make start build=image   Full stack in Docker with GHCR images (no repos needed)"
+	@echo "  make start               Infra in Docker + services run natively with go run"
 	@echo "  make stop                Stop all services and clean all state"
 	@echo "  make status              Show container status"
 	@echo "  make logs                Show how to view logs"
@@ -219,26 +216,8 @@ clean:
 	rm -f infrastructure/terraform/terraform.tfstate*
 
 # ============== Local Development ==============
-# Usage:
-#   make start               # Default: build=local (infra in Docker, services run natively)
-#   make start build=local   # Infra in Docker + services run natively with go run
-#   make start build=volume  # Full stack in Docker with volume mounts + hot-reload
-#   make start build=image   # Full stack in Docker with GHCR images (no repos needed)
 
-# Default: local (infra in Docker, services run natively - simplest for development)
-build ?= local
-
-# Select docker-compose file based on build mode
-ifeq ($(build),local)
-  COMPOSE_FILE := local/docker-compose.yaml
-  BUILD_DESC := LOCAL (infra in Docker, services run natively)
-else ifeq ($(build),volume)
-  COMPOSE_FILE := local/docker-compose.local.yaml
-  BUILD_DESC := VOLUME (full stack in Docker + hot-reload)
-else
-  COMPOSE_FILE := local/docker-compose.full.yaml
-  BUILD_DESC := IMAGE (full stack with GHCR images)
-endif
+COMPOSE_FILE := local/docker-compose.yaml
 
 build-vcli:
 	@echo "Building vcli..."
@@ -246,27 +225,21 @@ build-vcli:
 	@echo "Built: local/vcli"
 	@echo "Use ./local/vcli.sh (wrapper) or make start/stop/status"
 
-# Start services based on build mode
 start:
 	@echo "============================================"
-	@echo "  Vultisig Local Dev Environment Startup"
+	@echo "  Vultisig Local Dev Environment"
 	@echo "============================================"
 	@echo ""
-	@echo "Build: $(BUILD_DESC)"
-	@echo ""
-ifeq ($(build),local)
-	@# build=local: Check repos exist
 	@if [ ! -d "../verifier" ]; then \
 		echo "ERROR: ../verifier directory not found"; \
-		echo "build=local requires: vcli, verifier, app-recurring as sibling directories"; \
+		echo "Required sibling repos: vcli, verifier, app-recurring"; \
 		exit 1; \
 	fi
 	@if [ ! -d "../app-recurring" ]; then \
 		echo "ERROR: ../app-recurring directory not found"; \
-		echo "build=local requires: vcli, verifier, app-recurring as sibling directories"; \
+		echo "Required sibling repos: vcli, verifier, app-recurring"; \
 		exit 1; \
 	fi
-	@# Start infrastructure
 	@echo "Starting infrastructure (postgres, redis, minio)..."
 	@docker compose -f $(COMPOSE_FILE) down -v --remove-orphans 2>/dev/null || true
 	docker compose -f $(COMPOSE_FILE) up -d
@@ -274,99 +247,31 @@ ifeq ($(build),local)
 	@echo "Waiting for infrastructure..."
 	@sleep 5
 	@echo ""
-	@# Start services locally
 	@echo "Starting services locally..."
 	@./local/scripts/run-services.sh
-else ifeq ($(build),volume)
-	@# build=volume: Check repos exist for volume mounts
-	@if [ ! -d "../verifier" ]; then \
-		echo "ERROR: ../verifier directory not found"; \
-		echo "build=volume requires: vcli, verifier, app-recurring as sibling directories"; \
-		exit 1; \
-	fi
-	@if [ ! -d "../app-recurring" ]; then \
-		echo "ERROR: ../app-recurring directory not found"; \
-		echo "build=volume requires: vcli, verifier, app-recurring as sibling directories"; \
-		exit 1; \
-	fi
-	@docker compose -f $(COMPOSE_FILE) down -v --remove-orphans 2>/dev/null || true
-	docker compose -f $(COMPOSE_FILE) up -d
-	@echo ""
-	@echo "Waiting for services to be ready..."
-	@sleep 5
-	@echo ""
-	@echo "========================================="
-	@echo "  STARTUP COMPLETE"
-	@echo "========================================="
-	@echo ""
-	@echo "  Hot-reload enabled! Edit source files and changes reload in ~2-3s"
-	@echo ""
-	@echo "  Services (Docker containers):"
-	@echo "    Verifier API         localhost:8080"
-	@echo "    Verifier Worker      (background)"
-	@echo "    DCA Plugin API       localhost:8082"
-	@echo "    DCA Plugin Worker    (background)"
-	@echo ""
-	@echo "  Infrastructure:"
-	@echo "    PostgreSQL           localhost:5432"
-	@echo "    Redis                localhost:6379"
-	@echo "    MinIO                localhost:9000"
-	@echo ""
-	@echo "  View logs: docker logs -f <container-name>"
-else
-	@# build=image: No repos needed
-	@docker compose -f $(COMPOSE_FILE) down -v --remove-orphans 2>/dev/null || true
-	docker compose -f $(COMPOSE_FILE) up -d
-	@echo ""
-	@echo "Waiting for services to be ready..."
-	@sleep 5
-	@echo ""
-	@echo "========================================="
-	@echo "  STARTUP COMPLETE"
-	@echo "========================================="
-	@echo ""
-	@echo "  Services (GHCR images):"
-	@echo "    Verifier API         localhost:8080"
-	@echo "    Verifier Worker      (background)"
-	@echo "    DCA Plugin API       localhost:8082"
-	@echo "    DCA Plugin Worker    (background)"
-	@echo ""
-	@echo "  Infrastructure:"
-	@echo "    PostgreSQL           localhost:5432"
-	@echo "    Redis                localhost:6379"
-	@echo "    MinIO                localhost:9000"
-	@echo ""
-	@echo "  View logs: docker logs -f <container-name>"
-endif
 
 stop:
 	@echo "Stopping all services..."
-	@# Stop local Go processes if running
 	@-pkill -f "go run.*cmd/verifier" 2>/dev/null || true
 	@-pkill -f "go run.*cmd/worker" 2>/dev/null || true
 	@-pkill -f "go run.*cmd/server" 2>/dev/null || true
 	@-pkill -f "go run.*cmd/scheduler" 2>/dev/null || true
 	@-pkill -f "go run.*cmd/tx_indexer" 2>/dev/null || true
-	@# Stop Docker containers
-	@docker compose -f local/docker-compose.full.yaml down -v 2>/dev/null || true
-	@docker compose -f local/docker-compose.local.yaml down -v 2>/dev/null || true
 	@docker compose -f local/docker-compose.yaml down -v 2>/dev/null || true
 	@rm -rf ~/.vultisig/vaults/ 2>/dev/null || true
 	@echo "Stopped and cleaned."
 
 status:
-	@docker compose -f $(COMPOSE_FILE) ps 2>/dev/null || docker compose -f local/docker-compose.full.yaml ps
+	@docker compose -f $(COMPOSE_FILE) ps
 
 logs:
-	@echo "Use 'docker logs <container-name>' to view logs"
+	@echo "Services run natively - logs are in local/logs/"
 	@echo ""
-	@echo "Container names:"
-	@echo "  vultisig-verifier      - Verifier API"
-	@echo "  vultisig-worker        - Verifier Worker"
-	@echo "  vultisig-dca           - DCA Plugin Server"
-	@echo "  vultisig-dca-worker    - DCA Plugin Worker"
-	@echo "  vultisig-dca-scheduler - DCA Scheduler"
+	@echo "  tail -f local/logs/verifier.log"
+	@echo "  tail -f local/logs/worker.log"
+	@echo "  tail -f local/logs/dca-server.log"
+	@echo "  tail -f local/logs/dca-worker.log"
+	@echo "  tail -f local/logs/dca-scheduler.log"
 	@echo ""
-	@echo "Example: docker logs -f vultisig-verifier"
-	@echo "All logs: docker compose -f $(COMPOSE_FILE) logs -f"
+	@echo "All logs: tail -f local/logs/*.log"
 
