@@ -123,13 +123,6 @@ The bracketed steps (policy testing) can be repeated as many times as needed. Ev
 
 ---
 
-## Prerequisites
-
-- **Docker** - https://docs.docker.com/get-docker/
-- **Docker Compose** - Usually included with Docker Desktop
-
-That's it! No local repo clones, no library builds, no Go installation required.
-
 ## Vault Requirement
 
 You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig mobile app:
@@ -141,10 +134,6 @@ You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig m
 ## Initial Setup (One-Time)
 
 ```bash
-# Clone this repo
-git clone https://github.com/vultisig/vcli.git
-cd vcli
-
 # Put your vault file in the keyshares directory
 cp ~/Downloads/MyVault.vult local/keyshares/
 ```

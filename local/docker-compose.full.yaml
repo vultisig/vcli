@@ -292,6 +292,8 @@ services:
     depends_on:
       dca-server:
         condition: service_healthy
+      dca-tx-indexer:
+        condition: service_healthy
     networks:
       - vultisig
 
@@ -362,3 +364,9 @@ services:
         condition: service_healthy
     networks:
       - vultisig
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
