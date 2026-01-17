@@ -2,7 +2,99 @@
 
 Vultisig CLI - Local development environment for testing Vultisig plugins.
 
-**All services run as Docker containers - no local repo clones required!**
+---
+
+## Quick Start (For Developers)
+
+```bash
+# Clone repos as siblings
+git clone https://github.com/vultisig/vcli.git
+git clone https://github.com/vultisig/verifier.git
+git clone https://github.com/vultisig/app-recurring.git
+
+# Start everything
+cd vcli
+make start
+```
+
+That's it! Infrastructure runs in Docker, services run natively with `go run`.
+
+---
+
+## Build Modes
+
+vcli supports three build modes for different use cases:
+
+| Mode | Command | What It Does | Best For |
+|------|---------|--------------|----------|
+| **local** (default) | `make start` | Infra in Docker, services run natively with `go run` | Active development |
+| **volume** | `make start build=volume` | Full stack in Docker with volume mounts | Testing Docker config with hot-reload |
+| **image** | `make start build=image` | Full stack in Docker with GHCR images | CI/CD, quick testing without repos |
+
+### build=local (Default) — Active Development
+
+**Best for:** Day-to-day development when you're making changes to verifier or app-recurring.
+
+```bash
+make start              # or explicitly: make start build=local
+```
+
+**What happens:**
+1. Starts postgres, redis, minio in Docker
+2. Runs verifier and app-recurring services natively with `go run`
+3. Edit code → restart to apply (or use your own hot-reload setup)
+
+**Requirements:**
+```
+your-folder/
+  ├── vcli/           # this repo
+  ├── verifier/       # git clone https://github.com/vultisig/verifier.git
+  └── app-recurring/  # git clone https://github.com/vultisig/app-recurring.git
+```
+
+**Logs:** `tail -f local/logs/*.log`
+
+### build=volume — Docker with Hot-Reload
+
+**Best for:** Testing Docker configuration while still iterating on code.
+
+```bash
+make start build=volume
+```
+
+**What happens:**
+1. Builds Docker images from local source
+2. Volume-mounts source directories into containers
+3. Uses `air` for hot-reload (~2-3s rebuild on file change)
+
+**Requirements:** Same sibling repos as `build=local`
+
+**Logs:** `docker logs -f vultisig-verifier`
+
+### build=image — Pre-built GHCR Images
+
+**Best for:** Quick testing, CI/CD, or when you don't need to modify verifier/app-recurring.
+
+```bash
+make start build=image
+```
+
+**What happens:**
+1. Pulls pre-built images from `ghcr.io/vultisig/...`
+2. No local repos required
+3. No ability to modify code (use for testing only)
+
+**Requirements:** Just Docker. No sibling repos needed.
+
+**Logs:** `docker logs -f vultisig-verifier`
+
+---
+
+## Stopping Services
+
+```bash
+make stop    # Stops everything (Docker containers + native processes) and cleans state
+```
 
 ---
 
@@ -11,9 +103,9 @@ Vultisig CLI - Local development environment for testing Vultisig plugins.
 **You MUST follow the E2E testing flow exactly as documented below.** The flow is:
 
 ```
-START → IMPORT → DETAILS → INSTALL → [ GENERATE → ADD → MONITOR ] → [ repeat for more policies ]
-                ↓                                                              ↑_________________↲
-         (view addresses)
+START → IMPORT → INSTALL → [ GENERATE → ADD → MONITOR ] ─┐
+                                                         │
+                                  (repeat as needed) ←───┘
 ```
 
 The bracketed steps (policy testing) can be repeated as many times as needed. Everything else runs once per test cycle. When completely done testing, proceed to cleanup (DELETE → UNINSTALL → STOP).
@@ -31,13 +123,6 @@ The bracketed steps (policy testing) can be repeated as many times as needed. Ev
 
 ---
 
-## Prerequisites
-
-- **Docker** - https://docs.docker.com/get-docker/
-- **Docker Compose** - Usually included with Docker Desktop
-
-That's it! No local repo clones, no library builds, no Go installation required.
-
 ## Vault Requirement
 
 You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig mobile app:
@@ -49,10 +134,6 @@ You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig m
 ## Initial Setup (One-Time)
 
 ```bash
-# Clone this repo
-git clone https://github.com/vultisig/vcli.git
-cd vcli
-
 # Put your vault file in the keyshares directory
 cp ~/Downloads/MyVault.vult local/keyshares/
 ```
@@ -413,10 +494,16 @@ The workers use separate task queues to prevent task stealing.
 ## Make Commands
 
 ```bash
-make build                  # Build vcli
-make start                  # Start all services
+# Build modes
+make start                  # Default: build=local (infra Docker, services native)
+make start build=local      # Infra in Docker, services run natively with go run
+make start build=volume     # Full stack in Docker with volume mounts + hot-reload
+make start build=image      # Full stack in Docker with GHCR images
+
+# Other commands
 make stop                   # Stop all services and clean state
 make status                 # Show container status
+make help                   # Show all available commands
 ```
 
 ## Directory Structure
@@ -424,15 +511,28 @@ make status                 # Show container status
 ```
 vcli/
 ├── local/
-│   ├── cmd/vcli/               # vcli source code
-│   ├── scripts/                # Shell scripts (vcli.sh)
-│   ├── keyshares/              # Put your .vult files here
-│   ├── policies/               # Policy JSON templates
-│   ├── configs/                # Service environment files (*.env)
-│   ├── docker-compose.yaml     # Infrastructure only
-│   ├── docker-compose.full.yaml # All services as Docker
-│   └── cluster.yaml            # Cluster configuration
-└── Makefile
+│   ├── cmd/vcli/                  # vcli source code
+│   ├── scripts/
+│   │   ├── vcli.sh                # vcli wrapper script
+│   │   └── run-services.sh        # Runs services natively (build=local)
+│   ├── keyshares/                 # Put your .vult files here
+│   ├── policies/                  # Policy JSON templates
+│   ├── configs/                   # Service environment files (*.env)
+│   ├── logs/                      # Native service logs (build=local)
+│   ├── docker-compose.yaml        # Infrastructure only (postgres, redis, minio)
+│   ├── docker-compose.local.yaml  # Full stack with volume mounts (build=volume)
+│   ├── docker-compose.full.yaml   # Full stack with GHCR images (build=image)
+│   └── cluster.yaml               # Cluster configuration
+├── Makefile                       # Main entry point: make start/stop/status
+└── README.md
+```
+
+**Sibling repos (required for build=local and build=volume):**
+```
+your-folder/
+├── vcli/
+├── verifier/
+└── app-recurring/
 ```
 
 ## Troubleshooting

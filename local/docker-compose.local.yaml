@@ -1,9 +1,14 @@
-# Full local development environment for Vultisig services
-# All services run as Docker containers - no local repo clones needed
+# Local development environment with volume mounts for hot-reloading
+# Usage: docker compose -f docker-compose.local.yaml up -d
 #
-# Usage: docker compose -f docker-compose.full.yaml up -d
+# This file is used by 'vcli start --mode=local' or 'vcli start --mode=dev'
 #
-# This file is used by 'vcli start' command
+# REQUIRES: Local clones of verifier and app-recurring repos adjacent to vcli
+# Expected structure:
+#   /path/to/vultisig/
+#     ├── vcli/
+#     ├── verifier/
+#     └── app-recurring/
 
 networks:
   vultisig:
@@ -94,17 +99,17 @@ services:
       - vultisig
 
   # ============================================
-  # VERIFIER STACK
+  # VERIFIER STACK (Local Dev with Hot Reload)
   # ============================================
 
   verifier:
-    image: ghcr.io/vultisig/verifier/verifier:latest
-    platform: linux/amd64
+    build:
+      context: ../../verifier
+      dockerfile: Dockerfile.dev.verifier
     container_name: vultisig-verifier
-    command: ["./main"]
     ports:
       - "8080:8080"
-      - "8088:8088"  # metrics
+      - "8088:8088"
     environment:
       # Server config
       SERVER_HOST: "0.0.0.0"
@@ -130,6 +135,15 @@ services:
       METRICS_ENABLED: "true"
       METRICS_HOST: "0.0.0.0"
       METRICS_PORT: "8088"
+    volumes:
+      - ../../verifier/cmd:/app/cmd
+      - ../../verifier/internal:/app/internal
+      - ../../verifier/address:/app/address
+      - ../../verifier/common:/app/common
+      - ../../verifier/config:/app/config
+      - ../../verifier/plugin:/app/plugin
+      - ../../verifier/types:/app/types
+      - ../../verifier/vault:/app/vault
     depends_on:
       postgres:
         condition: service_healthy
@@ -139,22 +153,20 @@ services:
         condition: service_completed_successfully
     networks:
       - vultisig
-    # Note: healthcheck disabled because container lacks curl/wget
-    # Use 'docker logs vultisig-verifier' to verify startup
     healthcheck:
       test: ["CMD-SHELL", "exit 0"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
 
   worker:
-    image: ghcr.io/vultisig/verifier/worker:latest
-    platform: linux/amd64
+    build:
+      context: ../../verifier
+      dockerfile: Dockerfile.dev.worker
     container_name: vultisig-worker
-    command: ["./main"]
     ports:
-      - "8089:8089"  # metrics
+      - "8089:8089"
     environment:
       LOG_FORMAT: "text"
       # Database
@@ -178,6 +190,15 @@ services:
       METRICS_ENABLED: "true"
       METRICS_HOST: "0.0.0.0"
       METRICS_PORT: "8089"
+    volumes:
+      - ../../verifier/cmd:/app/cmd
+      - ../../verifier/internal:/app/internal
+      - ../../verifier/address:/app/address
+      - ../../verifier/common:/app/common
+      - ../../verifier/config:/app/config
+      - ../../verifier/plugin:/app/plugin
+      - ../../verifier/types:/app/types
+      - ../../verifier/vault:/app/vault
     depends_on:
       verifier:
         condition: service_healthy
@@ -185,17 +206,19 @@ services:
       - vultisig
 
   # ============================================
-  # DCA PLUGIN STACK
+  # DCA PLUGIN STACK (Local Dev with Hot Reload)
   # ============================================
 
   dca-server:
-    image: ghcr.io/vultisig/app-recurring/server:latest
-    platform: linux/amd64
+    build:
+      context: ../../app-recurring
+      dockerfile: Dockerfile.dev
+      args:
+        SERVICE: server
     container_name: vultisig-dca
-    command: ["./main"]
     ports:
       - "8082:8082"
-      - "8181:8181"  # metrics
+      - "8181:8181"
     environment:
       MODE: "swap"
       LOG_FORMAT: "text"
@@ -220,26 +243,30 @@ services:
       METRICS_ENABLED: "true"
       METRICS_HOST: "0.0.0.0"
       METRICS_PORT: "8181"
+    volumes:
+      - ../../app-recurring/cmd:/app/cmd
+      - ../../app-recurring/internal:/app/internal
     depends_on:
       verifier:
         condition: service_healthy
     networks:
       - vultisig
-    # Note: healthcheck disabled because container lacks curl/wget
     healthcheck:
       test: ["CMD-SHELL", "exit 0"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
 
   dca-worker:
-    image: ghcr.io/vultisig/app-recurring/worker:latest
-    platform: linux/amd64
+    build:
+      context: ../../app-recurring
+      dockerfile: Dockerfile.dev
+      args:
+        SERVICE: worker
     container_name: vultisig-dca-worker
-    command: ["./main"]
     ports:
-      - "8183:8183"  # metrics
+      - "8183:8183"
     environment:
       MODE: "swap"
       LOG_FORMAT: "text"
@@ -289,22 +316,25 @@ services:
       DOGE_BLOCKCHAIRURL: "https://api.vultisig.com/blockchair"
       # Solana
       SOLANA_JUPITERAPIURL: "https://quote-api.jup.ag/v6"
+    volumes:
+      - ../../app-recurring/cmd:/app/cmd
+      - ../../app-recurring/internal:/app/internal
     depends_on:
       dca-server:
-        condition: service_healthy
-      dca-tx-indexer:
         condition: service_healthy
     networks:
       - vultisig
 
   dca-scheduler:
-    image: ghcr.io/vultisig/app-recurring/scheduler:latest
-    platform: linux/amd64
+    build:
+      context: ../../app-recurring
+      dockerfile: Dockerfile.dev
+      args:
+        SERVICE: scheduler
     container_name: vultisig-dca-scheduler
-    command: ["./main"]
     ports:
-      - "8184:8184"  # health
-      - "8185:8185"  # metrics
+      - "8184:8184"
+      - "8185:8185"
     environment:
       LOG_FORMAT: "text"
       # Database
@@ -319,6 +349,9 @@ services:
       METRICS_ENABLED: "true"
       METRICS_HOST: "0.0.0.0"
       METRICS_PORT: "8185"
+    volumes:
+      - ../../app-recurring/cmd:/app/cmd
+      - ../../app-recurring/internal:/app/internal
     depends_on:
       dca-server:
         condition: service_healthy
@@ -326,13 +359,15 @@ services:
       - vultisig
 
   dca-tx-indexer:
-    image: ghcr.io/vultisig/app-recurring/tx_indexer:latest
-    platform: linux/amd64
+    build:
+      context: ../../app-recurring
+      dockerfile: Dockerfile.dev
+      args:
+        SERVICE: tx_indexer
     container_name: vultisig-dca-tx-indexer
-    command: ["./main"]
     ports:
-      - "8186:8186"  # health
-      - "8187:8187"  # metrics
+      - "8186:8186"
+      - "8187:8187"
     environment:
       LOG_FORMAT: "text"
       # Health
@@ -359,14 +394,11 @@ services:
       BASE_RPC_POLYGON_URL: "https://polygon-bor-rpc.publicnode.com"
       BASE_RPC_BITCOIN_URL: "https://bitcoin-rpc.publicnode.com"
       BASE_RPC_SOLANA_URL: "https://solana-rpc.publicnode.com"
+    volumes:
+      - ../../app-recurring/cmd:/app/cmd
+      - ../../app-recurring/internal:/app/internal
     depends_on:
       dca-server:
         condition: service_healthy
     networks:
       - vultisig
-    healthcheck:
-      test: ["CMD-SHELL", "exit 0"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s

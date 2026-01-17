@@ -418,8 +418,10 @@ func checkMinioFileWithRetry(bucket, pluginID, publicKey string, maxRetries int)
 
 func checkMinioFile(bucket, pluginID, publicKey string) (string, string) {
 	fileName := fmt.Sprintf("%s-%s.vult", pluginID, publicKey)
+	// Set up alias and check file in one command
 	cmd := exec.Command("docker", "exec", "vultisig-minio",
-		"mc", "ls", "--json", "local/"+bucket+"/"+fileName)
+		"/bin/sh", "-c",
+		fmt.Sprintf("mc alias set myminio http://localhost:9000 minioadmin minioadmin >/dev/null 2>&1 && mc ls --json myminio/%s/%s", bucket, fileName))
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
