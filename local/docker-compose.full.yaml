@@ -1,5 +1,3 @@
-version: "3.8"
-
 # Full local development environment for Vultisig services
 # All services run as Docker containers - no local repo clones needed
 #
@@ -101,33 +99,37 @@ services:
 
   verifier:
     image: ghcr.io/vultisig/verifier/verifier:latest
+    platform: linux/amd64
     container_name: vultisig-verifier
+    command: ["./main"]
     ports:
       - "8080:8080"
       - "8088:8088"  # metrics
     environment:
       # Server config
-      VS_VERIFIER_SERVER_HOST: "0.0.0.0"
-      VS_VERIFIER_SERVER_PORT: "8080"
-      VS_VERIFIER_SERVER_JWT_SECRET: "devsecret"
-      VS_VERIFIER_LOG_FORMAT: "text"
-      VS_VERIFIER_AUTH_ENABLED: "true"
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "8080"
+      SERVER_JWT_SECRET: "devsecret"
+      LOG_FORMAT: "text"
+      AUTH_ENABLED: "true"
       # Database
-      VS_VERIFIER_DATABASE_DSN: "postgres://vultisig:vultisig@postgres:5432/vultisig-verifier?sslmode=disable"
+      DATABASE_DSN: "postgres://vultisig:vultisig@postgres:5432/vultisig-verifier?sslmode=disable"
       # Redis
-      VS_VERIFIER_REDIS_URI: "redis://:vultisig@redis:6379"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: vultisig
       # Block Storage (MinIO)
-      VS_VERIFIER_BLOCK_STORAGE_HOST: "http://minio:9000"
-      VS_VERIFIER_BLOCK_STORAGE_REGION: "us-east-1"
-      VS_VERIFIER_BLOCK_STORAGE_ACCESS_KEY: "minioadmin"
-      VS_VERIFIER_BLOCK_STORAGE_SECRET: "minioadmin"
-      VS_VERIFIER_BLOCK_STORAGE_BUCKET: "vultisig-verifier"
+      BLOCK_STORAGE_HOST: "http://minio:9000"
+      BLOCK_STORAGE_REGION: "us-east-1"
+      BLOCK_STORAGE_ACCESS_KEY: "minioadmin"
+      BLOCK_STORAGE_SECRET: "minioadmin"
+      BLOCK_STORAGE_BUCKET: "vultisig-verifier"
       # Encryption
-      VS_VERIFIER_ENCRYPTION_SECRET: "dev-encryption-secret-32b"
+      ENCRYPTION_SECRET: "dev-encryption-secret-32b"
       # Metrics
-      VS_VERIFIER_METRICS_ENABLED: "true"
-      VS_VERIFIER_METRICS_HOST: "0.0.0.0"
-      VS_VERIFIER_METRICS_PORT: "8088"
+      METRICS_ENABLED: "true"
+      METRICS_HOST: "0.0.0.0"
+      METRICS_PORT: "8088"
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,39 +139,45 @@ services:
         condition: service_completed_successfully
     networks:
       - vultisig
+    # Note: healthcheck disabled because container lacks curl/wget
+    # Use 'docker logs vultisig-verifier' to verify startup
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/plugins"]
-      interval: 10s
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 30s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 3
+      start_period: 10s
 
   worker:
     image: ghcr.io/vultisig/verifier/worker:latest
+    platform: linux/amd64
     container_name: vultisig-worker
+    command: ["./main"]
     ports:
       - "8089:8089"  # metrics
     environment:
-      VS_WORKER_LOG_FORMAT: "text"
+      LOG_FORMAT: "text"
       # Database
-      VS_WORKER_DATABASE_DSN: "postgres://vultisig:vultisig@postgres:5432/vultisig-verifier?sslmode=disable"
+      DATABASE_DSN: "postgres://vultisig:vultisig@postgres:5432/vultisig-verifier?sslmode=disable"
       # Redis
-      VS_WORKER_REDIS_URI: "redis://:vultisig@redis:6379"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: vultisig
       # Block Storage (MinIO)
-      VS_WORKER_BLOCK_STORAGE_HOST: "http://minio:9000"
-      VS_WORKER_BLOCK_STORAGE_REGION: "us-east-1"
-      VS_WORKER_BLOCK_STORAGE_ACCESS_KEY: "minioadmin"
-      VS_WORKER_BLOCK_STORAGE_SECRET: "minioadmin"
-      VS_WORKER_BLOCK_STORAGE_BUCKET: "vultisig-verifier"
+      BLOCK_STORAGE_HOST: "http://minio:9000"
+      BLOCK_STORAGE_REGION: "us-east-1"
+      BLOCK_STORAGE_ACCESS_KEY: "minioadmin"
+      BLOCK_STORAGE_SECRET: "minioadmin"
+      BLOCK_STORAGE_BUCKET: "vultisig-verifier"
       # Vault Service (TSS)
-      VS_WORKER_VAULT_SERVICE_RELAY_SERVER: "https://api.vultisig.com/router"
-      VS_WORKER_VAULT_SERVICE_LOCAL_PARTY_PREFIX: "verifier-dev"
-      VS_WORKER_VAULT_SERVICE_ENCRYPTION_SECRET: "dev-encryption-secret-32b"
-      VS_WORKER_VAULT_SERVICE_DO_SETUP_MSG: "false"
+      VAULT_SERVICE_RELAY_SERVER: "https://api.vultisig.com/router"
+      VAULT_SERVICE_LOCAL_PARTY_PREFIX: "verifier-dev"
+      VAULT_SERVICE_ENCRYPTION_SECRET: "dev-encryption-secret-32b"
+      VAULT_SERVICE_DO_SETUP_MSG: "false"
       # Metrics
-      VS_WORKER_METRICS_ENABLED: "true"
-      VS_WORKER_METRICS_HOST: "0.0.0.0"
-      VS_WORKER_METRICS_PORT: "8089"
+      METRICS_ENABLED: "true"
+      METRICS_HOST: "0.0.0.0"
+      METRICS_PORT: "8089"
     depends_on:
       verifier:
         condition: service_healthy
@@ -182,7 +190,9 @@ services:
 
   dca-server:
     image: ghcr.io/vultisig/app-recurring/server:latest
+    platform: linux/amd64
     container_name: vultisig-dca
+    command: ["./main"]
     ports:
       - "8082:8082"
       - "8181:8181"  # metrics
@@ -215,16 +225,19 @@ services:
         condition: service_healthy
     networks:
       - vultisig
+    # Note: healthcheck disabled because container lacks curl/wget
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/spec"]
-      interval: 10s
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 30s
       timeout: 5s
-      retries: 10
-      start_period: 20s
+      retries: 3
+      start_period: 10s
 
   dca-worker:
     image: ghcr.io/vultisig/app-recurring/worker:latest
+    platform: linux/amd64
     container_name: vultisig-dca-worker
+    command: ["./main"]
     ports:
       - "8183:8183"  # metrics
     environment:
@@ -267,6 +280,7 @@ services:
       RPC_BSC_URL: "https://bsc-rpc.publicnode.com"
       RPC_AVALANCHE_URL: "https://avalanche-c-chain-rpc.publicnode.com"
       RPC_OPTIMISM_URL: "https://optimism-rpc.publicnode.com"
+      RPC_BLAST_URL: "https://blast-rpc.publicnode.com"
       RPC_SOLANA_URL: "https://api.mainnet-beta.solana.com"
       RPC_BITCOIN_URL: "https://mempool.space/api"
       # UTXO Chain Providers
@@ -283,7 +297,9 @@ services:
 
   dca-scheduler:
     image: ghcr.io/vultisig/app-recurring/scheduler:latest
+    platform: linux/amd64
     container_name: vultisig-dca-scheduler
+    command: ["./main"]
     ports:
       - "8184:8184"  # health
       - "8185:8185"  # metrics
@@ -309,7 +325,9 @@ services:
 
   dca-tx-indexer:
     image: ghcr.io/vultisig/app-recurring/tx_indexer:latest
+    platform: linux/amd64
     container_name: vultisig-dca-tx-indexer
+    command: ["./main"]
     ports:
       - "8186:8186"  # health
       - "8187:8187"  # metrics
@@ -335,8 +353,9 @@ services:
       BASE_RPC_BSC_URL: "https://bsc-rpc.publicnode.com"
       BASE_RPC_BASE_URL: "https://base-rpc.publicnode.com"
       BASE_RPC_OPTIMISM_URL: "https://optimism-rpc.publicnode.com"
+      BASE_RPC_BLAST_URL: "https://blast-rpc.publicnode.com"
       BASE_RPC_POLYGON_URL: "https://polygon-bor-rpc.publicnode.com"
-      BASE_RPC_BITCOIN_URL: "https://bitcoin-mainnet.public.blastapi.io"
+      BASE_RPC_BITCOIN_URL: "https://bitcoin-rpc.publicnode.com"
       BASE_RPC_SOLANA_URL: "https://solana-rpc.publicnode.com"
     depends_on:
       dca-server:

@@ -1,5 +1,3 @@
-version: "3.8"
-
 # Unified local development environment for Vultisig services
 # Usage: docker compose -f devenv/docker-compose.yaml up -d
 
