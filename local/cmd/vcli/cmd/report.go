@@ -367,8 +367,11 @@ type MinioFile struct {
 }
 
 func listMinioFiles(bucket string) ([]MinioFile, error) {
+	// Set up alias and list files in one command
+	// The alias needs to be set each time since it's not persisted in the container
 	cmd := exec.Command("docker", "exec", "vultisig-minio",
-		"mc", "ls", "--json", "local/"+bucket+"/")
+		"/bin/sh", "-c",
+		fmt.Sprintf("mc alias set myminio http://localhost:9000 minioadmin minioadmin >/dev/null 2>&1 && mc ls --json myminio/%s/", bucket))
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
