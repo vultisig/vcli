@@ -103,9 +103,9 @@ make stop    # Stops everything (Docker containers + native processes) and clean
 **You MUST follow the E2E testing flow exactly as documented below.** The flow is:
 
 ```
-START → IMPORT → DETAILS → INSTALL → [ GENERATE → ADD → MONITOR ] → [ repeat for more policies ]
-                ↓                                                              ↑_________________↲
-         (view addresses)
+START → IMPORT → INSTALL → [ GENERATE → ADD → MONITOR ] ─┐
+                                                         │
+                                  (repeat as needed) ←───┘
 ```
 
 The bracketed steps (policy testing) can be repeated as many times as needed. Everything else runs once per test cycle. When completely done testing, proceed to cleanup (DELETE → UNINSTALL → STOP).
