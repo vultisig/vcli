@@ -11,7 +11,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VCLI_DIR="$(dirname "$SCRIPT_DIR")"
+LOCAL_DIR="$(dirname "$SCRIPT_DIR")"
+VCLI_DIR="$(dirname "$LOCAL_DIR")"
 ROOT_DIR="$(dirname "$VCLI_DIR")"
 
 # Colors
