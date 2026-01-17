@@ -232,12 +232,17 @@ start:
 	@echo ""
 	@if [ ! -d "../verifier" ]; then \
 		echo "ERROR: ../verifier directory not found"; \
-		echo "Required sibling repos: vcli, verifier, app-recurring"; \
+		echo "Required sibling repos: vcli, verifier, feeplugin, app-recurring"; \
+		exit 1; \
+	fi
+	@if [ ! -d "../feeplugin" ]; then \
+		echo "ERROR: ../feeplugin directory not found"; \
+		echo "Required sibling repos: vcli, verifier, feeplugin, app-recurring"; \
 		exit 1; \
 	fi
 	@if [ ! -d "../app-recurring" ]; then \
 		echo "ERROR: ../app-recurring directory not found"; \
-		echo "Required sibling repos: vcli, verifier, app-recurring"; \
+		echo "Required sibling repos: vcli, verifier, feeplugin, app-recurring"; \
 		exit 1; \
 	fi
 	@echo "Starting infrastructure (postgres, redis, minio)..."
@@ -272,6 +277,8 @@ logs:
 	@echo "  tail -f local/logs/dca-server.log"
 	@echo "  tail -f local/logs/dca-worker.log"
 	@echo "  tail -f local/logs/dca-scheduler.log"
+	@echo "  tail -f local/logs/fee-server.log"
+	@echo "  tail -f local/logs/fee-worker.log"
 	@echo ""
 	@echo "All logs: tail -f local/logs/*.log"
 

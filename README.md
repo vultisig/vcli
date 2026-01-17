@@ -10,6 +10,7 @@ The Vultisig stack is tightly coupled:
 
 - **vcli** depends on verifier (TSS protocols)
 - **verifier** depends on recipes (chain abstraction)
+- **feeplugin** depends on verifier (fee collection)
 - **app-recurring** depends on recipes + verifier (policy execution)
 - All depend on **go-wrappers** (cryptographic primitives)
 
@@ -38,6 +39,7 @@ Clone all repos as siblings:
 mkdir vultisig && cd vultisig
 git clone https://github.com/vultisig/vcli.git
 git clone https://github.com/vultisig/verifier.git
+git clone https://github.com/vultisig/feeplugin.git
 git clone https://github.com/vultisig/app-recurring.git
 git clone https://github.com/vultisig/recipes.git
 git clone https://github.com/vultisig/go-wrappers.git
@@ -48,6 +50,7 @@ Directory structure:
 vultisig/
 ├── vcli/           # This tool
 ├── verifier/       # Policy verification + TSS
+├── feeplugin/      # Fee collection plugin
 ├── app-recurring/  # DCA plugin
 ├── recipes/        # Chain abstraction layer
 └── go-wrappers/    # Rust crypto (auto-downloaded, but useful to have)
@@ -69,7 +72,8 @@ make start    # Starts postgres/redis/minio in Docker, services run natively
 `make start`:
 1. Starts infrastructure in Docker (postgres, redis, minio)
 2. Runs verifier (API + worker) natively with `go run`
-3. Runs app-recurring (server + worker + scheduler) natively with `go run`
+3. Runs feeplugin (server + worker + tx_indexer) natively with `go run`
+4. Runs app-recurring (server + worker + scheduler) natively with `go run`
 
 Logs: `tail -f local/logs/*.log`
 

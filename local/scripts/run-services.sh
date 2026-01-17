@@ -6,7 +6,7 @@
 # Prerequisites:
 # - Docker running with postgres, redis, minio (via docker-compose.yaml)
 # - Go installed
-# - Sibling repos: ../verifier, ../app-recurring
+# - Sibling repos: ../verifier, ../feeplugin, ../app-recurring
 
 set -e
 
@@ -35,6 +35,11 @@ fi
 # Check repos exist
 if [ ! -d "$ROOT_DIR/verifier" ]; then
     echo -e "${RED}ERROR: verifier repo not found at $ROOT_DIR/verifier${NC}"
+    exit 1
+fi
+
+if [ ! -d "$ROOT_DIR/feeplugin" ]; then
+    echo -e "${RED}ERROR: feeplugin repo not found at $ROOT_DIR/feeplugin${NC}"
     exit 1
 fi
 
@@ -82,10 +87,32 @@ export ENCRYPTION_SECRET="dev-encryption-secret-32b"
 export METRICS_ENABLED="true"
 export METRICS_HOST="0.0.0.0"
 export METRICS_PORT="8088"
+export PROPOSED_YAML_PATH="$LOCAL_DIR/proposed_local.yaml"
 
 go run ./cmd/verifier > "$LOG_DIR/verifier.log" 2>&1 &
 VERIFIER_PID=$!
 echo -e "  ${GREEN}✓${NC} Verifier API (PID: $VERIFIER_PID) → localhost:8080"
+
+# Wait for verifier to be ready (migrations complete)
+echo -e "${CYAN}Waiting for verifier to initialize...${NC}"
+for i in {1..60}; do
+    # Check if plugins table exists (means migrations are done)
+    if docker exec vultisig-postgres psql -U vultisig -d vultisig-verifier -c "SELECT 1 FROM plugins LIMIT 1" > /dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+# Seed plugin API keys for local development
+echo -e "${CYAN}Seeding plugin API keys...${NC}"
+docker exec vultisig-postgres psql -U vultisig -d vultisig-verifier -c "
+INSERT INTO plugin_apikey (plugin_id, apikey, status)
+VALUES
+    ('vultisig-dca-0000', 'local-dev-dca-apikey', 1),
+    ('vultisig-recurring-sends-0000', 'local-dev-send-apikey', 1),
+    ('vultisig-fees-feee', 'local-dev-fee-apikey', 1)
+ON CONFLICT (apikey) DO NOTHING;
+" > /dev/null 2>&1 && echo -e "  ${GREEN}✓${NC} API keys seeded" || echo -e "  ${YELLOW}!${NC} API key seeding failed"
 
 echo -e "${CYAN}Starting Verifier Worker...${NC}"
 export VAULT_SERVICE_RELAY_SERVER="https://api.vultisig.com/router"
@@ -151,6 +178,12 @@ export RPC_OPTIMISM_URL="https://optimism-rpc.publicnode.com"
 export RPC_BLAST_URL="https://blast-rpc.publicnode.com"
 export RPC_SOLANA_URL="https://api.mainnet-beta.solana.com"
 export RPC_BITCOIN_URL="https://mempool.space/api"
+export RPC_ZKSYNC_URL="https://mainnet.era.zksync.io"
+export RPC_CRONOS_URL="https://evm.cronos.org"
+export RPC_XRP_URL="https://s1.ripple.com:51234"
+export RPC_COSMOS_URL="https://cosmos-rpc.publicnode.com"
+export RPC_MAYA_URL="https://tendermint.mayachain.info"
+export RPC_TRON_URL="https://api.trongrid.io"
 export BTC_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
 export LTC_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
 export DOGE_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
@@ -192,6 +225,59 @@ DCA_TX_INDEXER_PID=$!
 echo -e "  ${GREEN}✓${NC} DCA TX Indexer (PID: $DCA_TX_INDEXER_PID)"
 
 # ============================================
+# FEEPLUGIN SERVICES
+# ============================================
+
+echo -e "${CYAN}Starting Fee Plugin Server...${NC}"
+cd "$ROOT_DIR/feeplugin"
+
+# Fee Server environment
+export SERVER_HOST="0.0.0.0"
+export SERVER_PORT="8085"
+export SERVER_ENCRYPTIONSECRET="dev-encryption-secret-32b"
+export DATABASE_DSN="postgres://vultisig:vultisig@localhost:5432/vultisig-fee?sslmode=disable"
+export REDIS_URI="redis://:vultisig@localhost:6379"
+export BLOCK_STORAGE_HOST="http://localhost:9000"
+export BLOCK_STORAGE_REGION="us-east-1"
+export BLOCK_STORAGE_ACCESS_KEY="minioadmin"
+export BLOCK_STORAGE_SECRET="minioadmin"
+export BLOCK_STORAGE_BUCKET="vultisig-fee"
+
+go run ./cmd/server > "$LOG_DIR/fee-server.log" 2>&1 &
+FEE_SERVER_PID=$!
+echo -e "  ${GREEN}✓${NC} Fee Server (PID: $FEE_SERVER_PID) → localhost:8085"
+
+echo -e "${CYAN}Starting Fee Plugin Worker...${NC}"
+export HEALTH_PORT="8188"
+export PROCESSING_INTERVAL="2m"
+export VAULT_SERVICE_RELAY_SERVER="https://api.vultisig.com/router"
+export VAULT_SERVICE_LOCAL_PARTY_PREFIX="vultisig-fees-feee"
+export VAULT_SERVICE_ENCRYPTION_SECRET="dev-encryption-secret-32b"
+export VAULT_SERVICE_DO_SETUP_MSG="true"
+export VERIFIER_URL="http://localhost:8080"
+export VERIFIER_TOKEN="local-dev-fee-apikey"
+export VERIFIER_PARTY_PREFIX="verifier"
+export FEE_CONFIG_ETH_PROVIDER="https://ethereum-rpc.publicnode.com"
+export FEE_CONFIG_USDC_ADDRESS="0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+export FEE_CONFIG_TREASURY_ADDRESS="0x8E247a480449c84a5fDD25974A8501f3EFa4ABb9"
+
+go run ./cmd/worker > "$LOG_DIR/fee-worker.log" 2>&1 &
+FEE_WORKER_PID=$!
+echo -e "  ${GREEN}✓${NC} Fee Worker (PID: $FEE_WORKER_PID)"
+
+echo -e "${CYAN}Starting Fee TX Indexer...${NC}"
+export HEALTH_PORT="8189"
+export INTERVAL="30s"
+export ITERATIONTIMEOUT="30s"
+export MARKLOSTAFTER="2h"
+export CONCURRENCY="5"
+export RPC_ETHEREUM_URL="https://ethereum-rpc.publicnode.com"
+
+go run ./cmd/tx_indexer > "$LOG_DIR/fee-tx-indexer.log" 2>&1 &
+FEE_TX_INDEXER_PID=$!
+echo -e "  ${GREEN}✓${NC} Fee TX Indexer (PID: $FEE_TX_INDEXER_PID)"
+
+# ============================================
 # SUMMARY
 # ============================================
 
@@ -207,6 +293,9 @@ echo -e "    DCA Plugin API       localhost:8082"
 echo -e "    DCA Plugin Worker    (background)"
 echo -e "    DCA Scheduler        (background)"
 echo -e "    DCA TX Indexer       (background)"
+echo -e "    Fee Plugin API       localhost:8085"
+echo -e "    Fee Plugin Worker    (background)"
+echo -e "    Fee TX Indexer       (background)"
 echo ""
 echo -e "  ${CYAN}Infrastructure (Docker):${NC}"
 echo -e "    PostgreSQL           localhost:5432"
@@ -220,7 +309,7 @@ echo -e "    (or any file in $LOG_DIR/)"
 echo ""
 echo -e "  ${CYAN}Stop:${NC} make stop"
 echo ""
-echo -e "${GREEN}Edit code in ../verifier or ../app-recurring, then restart with 'make start'${NC}"
+echo -e "${GREEN}Edit code in ../verifier, ../feeplugin, or ../app-recurring, then restart with 'make start'${NC}"
 echo ""
 
 # Save PIDs for later cleanup
@@ -230,3 +319,6 @@ echo "$DCA_SERVER_PID" > "$LOG_DIR/dca-server.pid"
 echo "$DCA_WORKER_PID" > "$LOG_DIR/dca-worker.pid"
 echo "$DCA_SCHEDULER_PID" > "$LOG_DIR/dca-scheduler.pid"
 echo "$DCA_TX_INDEXER_PID" > "$LOG_DIR/dca-tx-indexer.pid"
+echo "$FEE_SERVER_PID" > "$LOG_DIR/fee-server.pid"
+echo "$FEE_WORKER_PID" > "$LOG_DIR/fee-worker.pid"
+echo "$FEE_TX_INDEXER_PID" > "$LOG_DIR/fee-tx-indexer.pid"

@@ -32,3 +32,5 @@ local/devctl
 # IDE
 .idea/
 .vscode/
+logs/
+local/proposed_local.yaml
