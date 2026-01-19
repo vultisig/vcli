@@ -60,14 +60,14 @@ vultisig/
 ```bash
 cd vcli
 
-# Build vcli (first time only)
+# Build vcli (REQUIRED - do this first!)
 cd local && go build -o vcli ./cmd/vcli && cd ..
 
 # Start all services
 make start    # Starts postgres/redis/minio in Docker, services run natively
 ```
 
-**Note:** The vcli binary must be built before using any `./local/vcli.sh` commands.
+> **⚠️ IMPORTANT:** You MUST build the vcli binary before using any `./local/vcli.sh` commands. If you see "No such file or directory" errors, run the build command above.
 
 ---
 
@@ -264,14 +264,14 @@ This is the **only** valid shortcut. You may:
 Generate a policy configuration file using the `vcli policy generate` command.
 
 ```bash
-# Generate a swap policy (output to local/policies/ directory)
-./local/vcli.sh policy generate --from eth --to usdc --amount 0.01 --output local/policies/my-policy.json
+# Generate a swap policy (use ABSOLUTE path for --output)
+./local/vcli.sh policy generate --from eth --to usdc --amount 0.01 --output /full/path/to/vcli/local/policies/my-policy.json
 
 # Generate with custom frequency
-./local/vcli.sh policy generate --from usdt --to btc --amount 10 --frequency daily --output local/policies/my-policy.json
+./local/vcli.sh policy generate --from usdt --to btc --amount 10 --frequency daily --output /full/path/to/vcli/local/policies/my-policy.json
 ```
 
-**Note:** Use `local/policies/` directory for output files. The path is relative to the vcli directory.
+> **⚠️ IMPORTANT:** The `--output` flag requires an **absolute path** (starting with `/`). Relative paths will fail because `vcli.sh` changes directories internally. Use `$(pwd)/local/policies/my-policy.json` or the full path.
 
 **Why use `policy generate`:**
 - Auto-derives wallet addresses from your imported vault
@@ -447,9 +447,9 @@ make status
 ./local/vcli.sh plugin install <plugin-id> --password "password"
 ./local/vcli.sh plugin uninstall <plugin-id>
 
-# Policy management
-./local/vcli.sh policy generate --from <asset> --to <asset> --amount <amount> --output local/policies/<file.json>
-./local/vcli.sh policy add --plugin <plugin-id> --policy-file local/policies/<config.json> --password "password"
+# Policy management (use absolute paths for file arguments)
+./local/vcli.sh policy generate --from <asset> --to <asset> --amount <amount> --output $(pwd)/local/policies/<file.json>
+./local/vcli.sh policy add --plugin <plugin-id> --policy-file $(pwd)/local/policies/<config.json> --password "password"
 ./local/vcli.sh policy list --plugin <plugin-id>
 ./local/vcli.sh policy status <policy-id>        # Check status and next execution
 ./local/vcli.sh policy transactions <policy-id>   # View executed transactions
