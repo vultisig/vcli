@@ -283,20 +283,32 @@ func ConvertToSmallestUnit(amount string, asset Asset) string {
 		return amount
 	}
 
-	decimals := 18 // Default for ETH/EVM native tokens
-	if asset.Chain == "Bitcoin" {
-		decimals = 8
-	} else if asset.Chain == "Solana" {
-		decimals = 9
-	} else if asset.Token != "" {
-		// ERC20 tokens - check common ones
-		tokenLower := strings.ToLower(asset.Token)
-		if strings.Contains(tokenLower, "a0b86991") || // USDC
-			strings.Contains(tokenLower, "dac17f958") { // USDT
-			decimals = 6
-		}
-	}
+	decimals := getChainDecimals(asset)
 
 	result := f * math.Pow(10, float64(decimals))
 	return fmt.Sprintf("%.0f", result)
+}
+
+func getChainDecimals(asset Asset) int {
+	// Check for ERC20/token overrides first
+	if asset.Token != "" {
+		tokenLower := strings.ToLower(asset.Token)
+		if strings.Contains(tokenLower, "a0b86991") || // USDC
+			strings.Contains(tokenLower, "dac17f958") { // USDT
+			return 6
+		}
+		return 18 // Default for ERC20
+	}
+
+	// Native token decimals by chain
+	switch asset.Chain {
+	case "Bitcoin", "Litecoin", "Bitcoin-Cash", "Dogecoin", "Zcash", "Dash", "THORChain":
+		return 8
+	case "Cosmos", "Osmosis", "Dydx", "Kujira", "MayaChain":
+		return 6
+	case "Solana":
+		return 9
+	default:
+		return 18 // ETH/EVM chains
+	}
 }
