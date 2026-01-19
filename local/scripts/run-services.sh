@@ -222,6 +222,21 @@ DCA_TX_INDEXER_PID=$!
 echo -e "  ${GREEN}✓${NC} DCA TX Indexer (PID: $DCA_TX_INDEXER_PID)"
 
 # ============================================
+# SEED DATABASE
+# ============================================
+
+echo -e "${CYAN}Seeding database...${NC}"
+# Wait for verifier to complete migrations
+sleep 5
+
+# Seed plugins (idempotent - uses ON CONFLICT)
+if docker exec -i vultisig-postgres psql -U vultisig -d vultisig-verifier < "$LOCAL_DIR/seed-plugins.sql" > /dev/null 2>&1; then
+    echo -e "  ${GREEN}✓${NC} Plugins seeded"
+else
+    echo -e "  ${YELLOW}⚠${NC} Plugin seeding failed (may already exist)"
+fi
+
+# ============================================
 # SUMMARY
 # ============================================
 
