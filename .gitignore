@@ -33,6 +33,7 @@ local/policies/*
 
 # OS
 .DS_Store
+*.rtf
 
 # IDE
 .idea/
