@@ -12,7 +12,7 @@ if [[ "$SCRIPT_DIR" == */scripts ]]; then
 else
     LOCAL_DIR="$SCRIPT_DIR"
 fi
-VCLI_BIN="$LOCAL_DIR/vcli"
+VCLI_BIN="$LOCAL_DIR/bin/vcli"
 
 # Auto-load vault password from local/vault.env if it exists
 if [ -f "$LOCAL_DIR/vault.env" ]; then

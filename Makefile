@@ -232,12 +232,17 @@ start:
 	@echo ""
 	@if [ ! -d "../verifier" ]; then \
 		echo "ERROR: ../verifier directory not found"; \
-		echo "Required sibling repos: vcli, verifier, app-recurring"; \
+		echo "Required sibling repos: vcli, verifier, feeplugin, app-recurring"; \
+		exit 1; \
+	fi
+	@if [ ! -d "../feeplugin" ]; then \
+		echo "ERROR: ../feeplugin directory not found"; \
+		echo "Required sibling repos: vcli, verifier, feeplugin, app-recurring"; \
 		exit 1; \
 	fi
 	@if [ ! -d "../app-recurring" ]; then \
 		echo "ERROR: ../app-recurring directory not found"; \
-		echo "Required sibling repos: vcli, verifier, app-recurring"; \
+		echo "Required sibling repos: vcli, verifier, feeplugin, app-recurring"; \
 		exit 1; \
 	fi
 	@echo "Starting infrastructure (postgres, redis, minio)..."
@@ -263,7 +268,9 @@ stop:
 	@-pkill -9 -f "go-build.*/scheduler$$" 2>/dev/null || true
 	@-pkill -9 -f "go-build.*/tx_indexer$$" 2>/dev/null || true
 	@sleep 2
-	@docker compose -f local/docker-compose.yaml down -v 2>/dev/null || true
+	@docker exec vultisig-redis redis-cli -a vultisig FLUSHALL 2>/dev/null || true
+	@docker compose -f local/docker-compose.yaml down -v --remove-orphans 2>/dev/null || true
+	@docker volume rm local_postgres-data local_redis-data local_minio-data 2>/dev/null || true
 	@rm -rf ~/.vultisig/vaults/ 2>/dev/null || true
 	@echo "Stopped and cleaned."
 
@@ -278,6 +285,8 @@ logs:
 	@echo "  tail -f local/logs/dca-server.log"
 	@echo "  tail -f local/logs/dca-worker.log"
 	@echo "  tail -f local/logs/dca-scheduler.log"
+	@echo "  tail -f local/logs/fee-server.log"
+	@echo "  tail -f local/logs/fee-worker.log"
 	@echo ""
 	@echo "All logs: tail -f local/logs/*.log"
 
