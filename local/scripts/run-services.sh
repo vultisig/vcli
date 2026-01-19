@@ -185,6 +185,7 @@ export BTC_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
 export LTC_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
 export DOGE_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
 export SOLANA_JUPITERAPIURL="https://quote-api.jup.ag/v6"
+export RPC_THORCHAIN_URL="https://rpc.ninerealms.com"
 
 go run ./cmd/worker > "$LOG_DIR/dca-worker.log" 2>&1 &
 DCA_WORKER_PID=$!
