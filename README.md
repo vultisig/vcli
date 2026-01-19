@@ -59,8 +59,15 @@ vultisig/
 
 ```bash
 cd vcli
+
+# Build vcli (first time only)
+cd local && go build -o vcli ./cmd/vcli && cd ..
+
+# Start all services
 make start    # Starts postgres/redis/minio in Docker, services run natively
 ```
+
+**Note:** The vcli binary must be built before using any `./local/vcli.sh` commands.
 
 ---
 
@@ -160,12 +167,14 @@ make status
 Import your vault into the local environment.
 
 ```bash
-# If vault is in local/keyshares/ (recommended):
+# Recommended: auto-find vault in local/keyshares/
 ./local/vcli.sh vault import --password "password"
 
-# Or specify a file explicitly:
-./local/vcli.sh vault import --file /path/to/vault.vult --password "password"
+# Or specify a file with ABSOLUTE path:
+./local/vcli.sh vault import --file /full/path/to/vault.vult --password "password"
 ```
+
+**Note:** When using `--file`, you must provide an absolute path (starting with `/`). Relative paths will not work because the vcli.sh wrapper changes directories internally.
 
 **Validation:**
 ```bash
@@ -255,12 +264,14 @@ This is the **only** valid shortcut. You may:
 Generate a policy configuration file using the `vcli policy generate` command.
 
 ```bash
-# Generate a swap policy (RECOMMENDED)
-./local/vcli.sh policy generate --from eth --to usdc --amount 0.01 --output my-policy.json
+# Generate a swap policy (output to local/policies/ directory)
+./local/vcli.sh policy generate --from eth --to usdc --amount 0.01 --output local/policies/my-policy.json
 
 # Generate with custom frequency
-./local/vcli.sh policy generate --from usdt --to btc --amount 10 --frequency daily --output my-policy.json
+./local/vcli.sh policy generate --from usdt --to btc --amount 10 --frequency daily --output local/policies/my-policy.json
 ```
+
+**Note:** Use `local/policies/` directory for output files. The path is relative to the vcli directory.
 
 **Why use `policy generate`:**
 - Auto-derives wallet addresses from your imported vault
@@ -301,7 +312,7 @@ Policy Summary:
 Add the policy to the installed plugin.
 
 ```bash
-./local/vcli.sh policy add --plugin vultisig-dca-0000 --policy-file my-policy.json --password "password"
+./local/vcli.sh policy add --plugin vultisig-dca-0000 --policy-file local/policies/my-policy.json --password "password"
 ```
 
 **Validation:**
@@ -437,8 +448,8 @@ make status
 ./local/vcli.sh plugin uninstall <plugin-id>
 
 # Policy management
-./local/vcli.sh policy generate --from <asset> --to <asset> --amount <amount> --output <file.json>
-./local/vcli.sh policy add --plugin <plugin-id> --policy-file <config.json> --password "password"
+./local/vcli.sh policy generate --from <asset> --to <asset> --amount <amount> --output local/policies/<file.json>
+./local/vcli.sh policy add --plugin <plugin-id> --policy-file local/policies/<config.json> --password "password"
 ./local/vcli.sh policy list --plugin <plugin-id>
 ./local/vcli.sh policy status <policy-id>        # Check status and next execution
 ./local/vcli.sh policy transactions <policy-id>   # View executed transactions
@@ -534,6 +545,15 @@ docker compose -f local/docker-compose.yaml ps
 lsof -i :5432   # Check PostgreSQL
 lsof -i :8080   # Check Verifier
 make stop       # Force stop everything
+```
+
+**On shared machines:** If another user has processes running on required ports, you'll need to coordinate with them or use sudo to kill the processes:
+```bash
+# Check what's using a port
+lsof -i :8080
+
+# If owned by another user, coordinate with them or:
+sudo pkill -9 -f "go-build.*/verifier"
 ```
 
 ### TSS Reshare Stuck at 3 Parties

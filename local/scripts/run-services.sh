@@ -47,14 +47,42 @@ fi
 LOG_DIR="$VCLI_DIR/logs"
 mkdir -p "$LOG_DIR"
 
-# Kill any existing processes
+# Setup go-wrappers library path
+LIB_DIR="$HOME/.vultisig/lib"
+if [[ "$(uname)" == "Darwin" ]]; then
+    LIB_DIR="$LIB_DIR/darwin"
+    export DYLD_LIBRARY_PATH="$LIB_DIR:$DYLD_LIBRARY_PATH"
+else
+    LIB_DIR="$LIB_DIR/linux"
+    export LD_LIBRARY_PATH="$LIB_DIR:$LD_LIBRARY_PATH"
+fi
+
+# Download go-wrappers if not present
+if [ ! -f "$LIB_DIR/libgodkls.dylib" ] && [ ! -f "$LIB_DIR/libgodkls.so" ]; then
+    echo -e "${YELLOW}Downloading go-wrappers libraries...${NC}"
+    # Trigger download by running vcli --help (it auto-downloads)
+    if [ -f "$LOCAL_DIR/vcli" ]; then
+        "$LOCAL_DIR/vcli" --help > /dev/null 2>&1 || true
+    else
+        echo -e "${RED}WARNING: vcli binary not found. Build it first: cd local && go build -o vcli ./cmd/vcli${NC}"
+        echo -e "${RED}Then run any vcli command to download go-wrappers libraries.${NC}"
+    fi
+fi
+
+# Kill any existing processes (both go run and compiled binaries)
 echo -e "${YELLOW}Cleaning up existing processes...${NC}"
-pkill -f "go run.*cmd/verifier" 2>/dev/null || true
-pkill -f "go run.*cmd/worker" 2>/dev/null || true
-pkill -f "go run.*cmd/server" 2>/dev/null || true
-pkill -f "go run.*cmd/scheduler" 2>/dev/null || true
-pkill -f "go run.*cmd/tx_indexer" 2>/dev/null || true
-sleep 1
+pkill -9 -f "go run.*cmd/verifier" 2>/dev/null || true
+pkill -9 -f "go run.*cmd/worker" 2>/dev/null || true
+pkill -9 -f "go run.*cmd/server" 2>/dev/null || true
+pkill -9 -f "go run.*cmd/scheduler" 2>/dev/null || true
+pkill -9 -f "go run.*cmd/tx_indexer" 2>/dev/null || true
+# Also kill compiled binaries in go-build cache
+pkill -9 -f "go-build.*/verifier$" 2>/dev/null || true
+pkill -9 -f "go-build.*/worker$" 2>/dev/null || true
+pkill -9 -f "go-build.*/server$" 2>/dev/null || true
+pkill -9 -f "go-build.*/scheduler$" 2>/dev/null || true
+pkill -9 -f "go-build.*/tx_indexer$" 2>/dev/null || true
+sleep 3
 
 # ============================================
 # VERIFIER SERVICES
@@ -149,6 +177,8 @@ export RPC_BSC_URL="https://bsc-rpc.publicnode.com"
 export RPC_AVALANCHE_URL="https://avalanche-c-chain-rpc.publicnode.com"
 export RPC_OPTIMISM_URL="https://optimism-rpc.publicnode.com"
 export RPC_BLAST_URL="https://blast-rpc.publicnode.com"
+export RPC_ZKSYNC_URL="https://mainnet.era.zksync.io"
+export RPC_CRONOS_URL="https://evm.cronos.org"
 export RPC_SOLANA_URL="https://api.mainnet-beta.solana.com"
 export RPC_BITCOIN_URL="https://mempool.space/api"
 export BTC_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
