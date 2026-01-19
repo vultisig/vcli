@@ -18,10 +18,15 @@ setup-env.sh
 # Local development
 local/vcli
 local/devctl
+logs/
 
 # Vault keyshare files (sensitive - never commit)
-*.vult
+local/keyshares/*
 !local/keyshares/.gitkeep
+
+# Policy files (user-generated, not committed)
+local/policies/*
+!local/policies/.gitkeep
 
 # Root-level test files (generated)
 /test-*.json

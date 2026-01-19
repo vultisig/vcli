@@ -252,11 +252,17 @@ start:
 
 stop:
 	@echo "Stopping all services..."
-	@-pkill -f "go run.*cmd/verifier" 2>/dev/null || true
-	@-pkill -f "go run.*cmd/worker" 2>/dev/null || true
-	@-pkill -f "go run.*cmd/server" 2>/dev/null || true
-	@-pkill -f "go run.*cmd/scheduler" 2>/dev/null || true
-	@-pkill -f "go run.*cmd/tx_indexer" 2>/dev/null || true
+	@-pkill -9 -f "go run.*cmd/verifier" 2>/dev/null || true
+	@-pkill -9 -f "go run.*cmd/worker" 2>/dev/null || true
+	@-pkill -9 -f "go run.*cmd/server" 2>/dev/null || true
+	@-pkill -9 -f "go run.*cmd/scheduler" 2>/dev/null || true
+	@-pkill -9 -f "go run.*cmd/tx_indexer" 2>/dev/null || true
+	@-pkill -9 -f "go-build.*/verifier$$" 2>/dev/null || true
+	@-pkill -9 -f "go-build.*/worker$$" 2>/dev/null || true
+	@-pkill -9 -f "go-build.*/server$$" 2>/dev/null || true
+	@-pkill -9 -f "go-build.*/scheduler$$" 2>/dev/null || true
+	@-pkill -9 -f "go-build.*/tx_indexer$$" 2>/dev/null || true
+	@sleep 2
 	@docker compose -f local/docker-compose.yaml down -v 2>/dev/null || true
 	@rm -rf ~/.vultisig/vaults/ 2>/dev/null || true
 	@echo "Stopped and cleaned."
