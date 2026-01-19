@@ -4,10 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -26,7 +22,7 @@ func NewStopCmd() *cobra.Command {
 }
 
 func runMakeStop() error {
-	fmt.Println("Running: make stop\n")
+	fmt.Println("Running: make stop")
 
 	vcliDir := findVcliRoot()
 
@@ -37,9 +33,3 @@ func runMakeStop() error {
 
 	return makeCmd.Run()
 }
-
-// Keep these for backwards compatibility but unused
-var _ = strconv.Itoa
-var _ = strings.TrimSpace
-var _ = time.Now
-var _ = filepath.Join
