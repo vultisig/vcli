@@ -1,0 +1,34 @@
+plugins:
+  - id: vultisig-dca-0000
+    title: Recurring Swaps
+    description: Automate your long-term investments with the Recurring Swaps app.
+    server_endpoint: http://localhost:8082
+    category: app
+    logo_url: https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/recurring_swap/icon.jpg
+    thumbnail_url: https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/recurring_swap/banner.jpg
+    audited: true
+    features:
+    - Automated Dollar Cost Averaging processing
+    - Recurring Swaps from any Vultisig supported Asset to any Asset
+    - Fully Flexible Scheduling
+    - Automatic Execution
+    faqs:
+      - question: What are recurring swaps?
+        answer: A recurring swap is a dollar-cost averaging (DCA) strategy.
+
+  - id: vultisig-recurring-sends-0000
+    title: Recurring Sends
+    description: Automate your outgoing transfers with the Recurring Sends App.
+    server_endpoint: http://localhost:8083
+    category: app
+    logo_url: https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/recurring_send/icon.jpg
+    thumbnail_url: https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/recurring_send/banner.jpg
+    audited: true
+    features:
+      - Automated Recurring Sends
+      - Works Across All Supported Assets
+      - Fully Flexible Scheduling
+      - Automatic Execution
+    faqs:
+      - question: What are recurring sends?
+        answer: Recurring sends let you automatically transfer crypto at regular intervals.
