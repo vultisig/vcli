@@ -217,6 +217,7 @@ export BASE_RPC_BLAST_URL="https://blast-rpc.publicnode.com"
 export BASE_RPC_POLYGON_URL="https://polygon-bor-rpc.publicnode.com"
 export BASE_RPC_BITCOIN_URL="https://bitcoin-rpc.publicnode.com"
 export BASE_RPC_SOLANA_URL="https://solana-rpc.publicnode.com"
+export BASE_RPC_THORCHAIN_URL="https://thornode.ninerealms.com"
 
 go run ./cmd/tx_indexer > "$LOG_DIR/dca-tx-indexer.log" 2>&1 &
 DCA_TX_INDEXER_PID=$!
