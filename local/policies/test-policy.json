@@ -1,9 +1,0 @@
-{
-  "recipe": {
-    "from": { "chain": "Ethereum", "token": "", "address": "" },
-    "to": { "chain": "Ethereum", "token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "address": "" },
-    "fromAmount": "1000000000000000",
-    "frequency": "daily"
-  },
-  "billing": []
-}
