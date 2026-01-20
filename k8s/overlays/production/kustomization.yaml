@@ -40,13 +40,14 @@ images:
   - name: docker.io/library/vultisig-tx-indexer:local-amd64
     newName: ghcr.io/vultisig/verifier/tx_indexer
     newTag: v0.1.16
-  # VCLI v1.0.0
+  # VCLI v1.0.1 - fix: GetPluginServerURL reads env vars before defaults
   - name: docker.io/library/vcli:local-amd64
     newName: ghcr.io/vultisig/vcli
-    newTag: v1.0.0
+    newTag: v1.0.1
 
-# Patch deployments to use IfNotPresent pull policy for production
+# Patch deployments for production GHCR images
 patches:
+  # Fix imagePullPolicy
   - patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
@@ -60,4 +61,46 @@ patches:
         value: IfNotPresent
     target:
       kind: Deployment
+      namespace: verifier
+  # Fix binary paths for GHCR images (use /app/main instead of /app/<component>)
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/command
+        value: ["/app/main"]
+    target:
+      kind: Deployment
+      name: scheduler
+      namespace: plugin-dca
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/command
+        value: ["/app/main"]
+    target:
+      kind: Deployment
+      name: tx-indexer
+      namespace: plugin-dca
+  # Verifier namespace patches
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/command
+        value: ["/app/main"]
+    target:
+      kind: Deployment
+      name: verifier
+      namespace: verifier
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/command
+        value: ["/app/main"]
+    target:
+      kind: Deployment
+      name: worker
+      namespace: verifier
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/command
+        value: ["/app/main"]
+    target:
+      kind: Deployment
+      name: tx-indexer
       namespace: verifier
