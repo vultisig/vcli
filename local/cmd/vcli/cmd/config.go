@@ -1,13 +1,18 @@
 package cmd
 
 import (
+	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type DevConfig struct {
@@ -245,6 +250,126 @@ func capitalizeChain(chain string) string {
 	return chain
 }
 
+// chainRPCEnvVars maps chain names to their RPC environment variable names
+var chainRPCEnvVars = map[string]string{
+	"Ethereum":  "RPC_ETHEREUM_URL",
+	"Arbitrum":  "RPC_ARBITRUM_URL",
+	"Base":      "RPC_BASE_URL",
+	"Optimism":  "RPC_OPTIMISM_URL",
+	"Polygon":   "RPC_POLYGON_URL",
+	"BSC":       "RPC_BSC_URL",
+	"Avalanche": "RPC_AVALANCHE_URL",
+	"Blast":     "RPC_BLAST_URL",
+	"ZkSync":    "RPC_ZKSYNC_URL",
+	"Cronos":    "RPC_CRONOS_URL",
+}
+
+// defaultRPCURLs provides fallback RPC URLs when env vars are not set
+var defaultRPCURLs = map[string]string{
+	"Ethereum":  "https://ethereum-rpc.publicnode.com",
+	"Arbitrum":  "https://arbitrum-one-rpc.publicnode.com",
+	"Base":      "https://base-rpc.publicnode.com",
+	"Optimism":  "https://optimism-rpc.publicnode.com",
+	"Polygon":   "https://polygon-bor-rpc.publicnode.com",
+	"BSC":       "https://bsc-rpc.publicnode.com",
+	"Avalanche": "https://avalanche-c-chain-rpc.publicnode.com",
+}
+
+// getChainRPCURL returns the RPC URL for a chain, checking env vars first
+func getChainRPCURL(chain string) (string, bool) {
+	if envVar, ok := chainRPCEnvVars[chain]; ok {
+		if url := os.Getenv(envVar); url != "" {
+			return url, true
+		}
+	}
+	if url, ok := defaultRPCURLs[chain]; ok {
+		return url, true
+	}
+	return "", false
+}
+
+// queryERC20Decimals queries the decimals() function of an ERC20 token contract
+func queryERC20Decimals(chain, tokenAddress string) (int, error) {
+	rpcURL, ok := getChainRPCURL(chain)
+	if !ok {
+		return 0, fmt.Errorf("no RPC URL for chain: %s", chain)
+	}
+
+	// decimals() function selector: 0x313ce567
+	payload := map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "eth_call",
+		"params": []any{
+			map[string]string{
+				"to":   tokenAddress,
+				"data": "0x313ce567",
+			},
+			"latest",
+		},
+		"id": 1,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return 0, fmt.Errorf("marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", rpcURL, strings.NewReader(string(payloadBytes)))
+	if err != nil {
+		return 0, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("read response: %w", err)
+	}
+
+	var result struct {
+		Result string `json:"result"`
+		Error  *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return 0, fmt.Errorf("parse response: %w", err)
+	}
+
+	if result.Error != nil {
+		return 0, fmt.Errorf("RPC error: %s", result.Error.Message)
+	}
+
+	if result.Result == "" || result.Result == "0x" {
+		return 0, fmt.Errorf("empty result from decimals()")
+	}
+
+	// Parse hex result (32 bytes, but decimals is just a uint8)
+	hexStr := strings.TrimPrefix(result.Result, "0x")
+	decoded, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return 0, fmt.Errorf("decode hex: %w", err)
+	}
+
+	if len(decoded) == 0 {
+		return 0, fmt.Errorf("empty decoded result")
+	}
+
+	// Decimals is the last byte (uint8)
+	decimals := int(decoded[len(decoded)-1])
+	return decimals, nil
+}
+
 // GetVaultByName returns a vault by name, or the first vault if name is empty
 func GetVaultByName(name string) (*LocalVault, error) {
 	vaults, err := ListVaults()
@@ -290,12 +415,20 @@ func ConvertToSmallestUnit(amount string, asset Asset) string {
 }
 
 func getChainDecimals(asset Asset) int {
-	// Check for ERC20/token overrides first
+	// For ERC20 tokens, query the contract for decimals
 	if asset.Token != "" {
+		decimals, err := queryERC20Decimals(asset.Chain, asset.Token)
+		if err == nil {
+			return decimals
+		}
+		// Fall back to known tokens if query fails
 		tokenLower := strings.ToLower(asset.Token)
 		if strings.Contains(tokenLower, "a0b86991") || // USDC
 			strings.Contains(tokenLower, "dac17f958") { // USDT
 			return 6
+		}
+		if strings.Contains(tokenLower, "2260fac5") { // WBTC
+			return 8
 		}
 		return 18 // Default for ERC20
 	}
