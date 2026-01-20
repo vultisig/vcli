@@ -3,6 +3,12 @@ kind: Kustomization
 
 # Local overlay: Deploy all services locally including Relay and VultiServer
 # Usage: kubectl apply -k k8s/overlays/local
+#
+# Prerequisites:
+#   1. Build and load images into local cluster (kind/minikube):
+#      docker build -t app-recurring-server:local-amd64 .
+#      kind load docker-image app-recurring-server:local-amd64
+#   2. Base uses imagePullPolicy: Never (requires pre-loaded images)
 
 resources:
   - ../../base
@@ -11,6 +17,12 @@ resources:
   - ../../base/vcli/
   - ingress-local.yaml
 
-# No patches needed - base already uses local cluster DNS endpoints:
+# Local uses cluster DNS endpoints from base:
 #   - relay.relay.svc.cluster.local
 #   - vultiserver.vultiserver.svc.cluster.local
+
+# Images use local tags (local-amd64) with Never pull policy
+# For multi-arch local dev, override with:
+# images:
+#   - name: docker.io/library/app-recurring-server
+#     newTag: local-arm64

@@ -1,0 +1,59 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: scheduler-pdb
+  namespace: plugin-dca
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dca
+      component: scheduler
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: server-swap-pdb
+  namespace: plugin-dca
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dca
+      component: server-swap
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: server-send-pdb
+  namespace: plugin-dca
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dca
+      component: server-send
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-pdb
+  namespace: plugin-dca
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dca
+      component: worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tx-indexer-pdb
+  namespace: plugin-dca
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dca
+      component: tx-indexer

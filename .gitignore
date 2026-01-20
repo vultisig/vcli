@@ -10,7 +10,7 @@ infrastructure/terraform/terraform.tfvars
 
 # Kubernetes
 .kube/
-k8s/secrets.yaml
+.env.k8s
 
 # Generated
 setup-env.sh

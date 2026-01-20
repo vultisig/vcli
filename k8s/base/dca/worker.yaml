@@ -7,7 +7,7 @@ metadata:
     app: dca
     component: worker
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: dca
@@ -24,12 +24,25 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/vultisig/app-recurring:latest
-          command: ["/app/worker"]
+          image: docker.io/library/app-recurring-worker:local-amd64
+          imagePullPolicy: Never
+          command: ["/app/main"]
           ports:
+            - containerPort: 8087
+              name: health
             - containerPort: 8088
               name: metrics
           env:
+            - name: LOG_FORMAT
+              value: "json"
+            - name: HEALTHPORT
+              value: "8087"
+            - name: METRICS_ENABLED
+              value: "true"
+            - name: METRICS_HOST
+              value: "0.0.0.0"
+            - name: METRICS_PORT
+              value: "8088"
             - name: POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -176,13 +189,87 @@ spec:
                 configMapKeyRef:
                   name: rpc-config
                   key: xrp
+            - name: RPC_ZKSYNC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: zksync
+            - name: RPC_CRONOS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: cronos
+            - name: RPC_COSMOS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: cosmos
+            - name: RPC_MAYA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: mayachain
+            - name: RPC_TRON_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: tron
+            - name: RPC_THORCHAIN_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: thorchain
+            - name: BTC_BLOCKCHAIRURL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: bitcoin
+            - name: LTC_BLOCKCHAIRURL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: litecoin
+            - name: DOGE_BLOCKCHAIRURL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: dogecoin
+            - name: BCH_BLOCKCHAIRURL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: bitcoincash
+            - name: DASH_BLOCKCHAIRURL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: dash
+            - name: ZEC_BLOCKCHAIRURL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: zcash
+            - name: SOLANA_JUPITERAPIURL
+              value: "https://quote-api.jup.ag/v6"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8087
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8087
+            initialDelaySeconds: 10
+            periodSeconds: 10
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "200m"
+              memory: "128Mi"
+              cpu: "50m"
             limits:
-              memory: "1Gi"
-              cpu: "1000m"
+              memory: "512Mi"
+              cpu: "500m"
 ---
 apiVersion: v1
 kind: Service
