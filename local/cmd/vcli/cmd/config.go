@@ -152,8 +152,26 @@ func ResolvePluginID(input string) string {
 }
 
 // GetPluginServerURL returns the server URL for a plugin ID (or alias)
+// It first checks the config, then falls back to hardcoded defaults
 func GetPluginServerURL(pluginIDOrAlias string) (string, error) {
 	pluginID := ResolvePluginID(pluginIDOrAlias)
+
+	// Check config for override (environment variables or config file)
+	cfg, err := LoadConfig()
+	if err == nil {
+		switch pluginID {
+		case "vultisig-dca-0000":
+			if cfg.DCAPlugin != "" && cfg.DCAPlugin != "http://localhost:8082" {
+				return cfg.DCAPlugin, nil
+			}
+		case "vultisig-fees-feee":
+			if cfg.FeePlugin != "" && cfg.FeePlugin != "http://localhost:8085" {
+				return cfg.FeePlugin, nil
+			}
+		}
+	}
+
+	// Fall back to hardcoded defaults
 	for _, p := range KnownPlugins {
 		if p.ID == pluginID {
 			return p.ServerURL, nil
