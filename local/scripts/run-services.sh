@@ -115,6 +115,20 @@ go run ./cmd/verifier > "$LOG_DIR/verifier.log" 2>&1 &
 VERIFIER_PID=$!
 echo -e "  ${GREEN}✓${NC} Verifier API (PID: $VERIFIER_PID) → localhost:8080"
 
+# Wait for verifier to complete migrations before starting other services
+echo -e "  ${YELLOW}⏳${NC} Waiting for verifier migrations..."
+for i in {1..30}; do
+    if grep -q "Database migration completed successfully" "$LOG_DIR/verifier.log" 2>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} Verifier migrations complete"
+        break
+    fi
+    if grep -q "FATA" "$LOG_DIR/verifier.log" 2>/dev/null; then
+        echo -e "  ${RED}✗${NC} Verifier failed to start. Check logs/verifier.log"
+        exit 1
+    fi
+    sleep 1
+done
+
 echo -e "${CYAN}Starting Verifier Worker...${NC}"
 export VAULT_SERVICE_RELAY_SERVER="https://api.vultisig.com/router"
 export VAULT_SERVICE_LOCAL_PARTY_PREFIX="verifier-dev"
