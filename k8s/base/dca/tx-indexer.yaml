@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: tx-indexer
-          image: ghcr.io/vultisig/app-recurring:latest
+          image: docker.io/library/app-recurring-txindexer:local-amd64
           command: ["/app/tx_indexer"]
           ports:
             - containerPort: 8183

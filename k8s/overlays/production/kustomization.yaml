@@ -17,27 +17,33 @@ patchesStrategicMerge:
 # Image configuration for production
 # Override base images with proper registry and tags
 images:
-  - name: docker.io/library/app-recurring-server
-    newName: ghcr.io/vultisig/app-recurring-server
-    newTag: latest
-  - name: docker.io/library/app-recurring-worker
-    newName: ghcr.io/vultisig/app-recurring-worker
-    newTag: latest
-  - name: docker.io/library/app-recurring-scheduler
-    newName: ghcr.io/vultisig/app-recurring-scheduler
-    newTag: latest
-  - name: docker.io/library/app-recurring-txindexer
-    newName: ghcr.io/vultisig/app-recurring-txindexer
-    newTag: latest
-  - name: docker.io/library/verifier
-    newName: ghcr.io/vultisig/verifier
-    newTag: latest
-  - name: docker.io/library/verifier-worker
-    newName: ghcr.io/vultisig/verifier-worker
-    newTag: latest
-  - name: docker.io/library/verifier-txindexer
-    newName: ghcr.io/vultisig/verifier-txindexer
-    newTag: latest
+  # DCA Plugin (app-recurring) v1.0.82
+  - name: docker.io/library/app-recurring-server:local-amd64
+    newName: ghcr.io/vultisig/app-recurring/server
+    newTag: v1.0.82
+  - name: docker.io/library/app-recurring-worker:local-amd64
+    newName: ghcr.io/vultisig/app-recurring/worker
+    newTag: v1.0.82
+  - name: docker.io/library/app-recurring-scheduler:local-amd64
+    newName: ghcr.io/vultisig/app-recurring/scheduler
+    newTag: v1.0.82
+  - name: docker.io/library/app-recurring-txindexer:local-amd64
+    newName: ghcr.io/vultisig/app-recurring/tx_indexer
+    newTag: v1.0.82
+  # Verifier v0.1.16
+  - name: docker.io/library/vultisig-verifier:local-amd64
+    newName: ghcr.io/vultisig/verifier/verifier
+    newTag: v0.1.16
+  - name: docker.io/library/vultisig-worker:local-amd64
+    newName: ghcr.io/vultisig/verifier/worker
+    newTag: v0.1.16
+  - name: docker.io/library/vultisig-tx-indexer:local-amd64
+    newName: ghcr.io/vultisig/verifier/tx_indexer
+    newTag: v0.1.16
+  # VCLI v1.0.0
+  - name: docker.io/library/vcli:local-amd64
+    newName: ghcr.io/vultisig/vcli
+    newTag: v1.0.0
 
 # Patch deployments to use IfNotPresent pull policy for production
 patches:

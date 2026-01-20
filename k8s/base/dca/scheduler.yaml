@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: scheduler
-          image: ghcr.io/vultisig/app-recurring:latest
+          image: docker.io/library/app-recurring-scheduler:local-amd64
           command: ["/app/scheduler"]
           ports:
             - containerPort: 8181

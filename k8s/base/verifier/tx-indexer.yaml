@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: tx-indexer
-          image: ghcr.io/vultisig/verifier:latest
+          image: docker.io/library/vultisig-tx-indexer:local-amd64
           command: ["/usr/local/bin/tx_indexer"]
           ports:
             - containerPort: 8088

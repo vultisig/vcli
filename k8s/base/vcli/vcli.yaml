@@ -9,7 +9,7 @@ spec:
   restartPolicy: Never
   containers:
   - name: vcli
-    image: ghcr.io/vultisig/vcli:latest
+    image: docker.io/library/vcli:local-amd64
     command: ["sleep", "infinity"]
     env:
     # Service URLs (in-cluster)

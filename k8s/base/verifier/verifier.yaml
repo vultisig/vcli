@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: verifier
-          image: ghcr.io/vultisig/verifier:latest
+          image: docker.io/library/vultisig-verifier:local-amd64
           command: ["/usr/local/bin/verifier"]
           ports:
             - containerPort: 8080

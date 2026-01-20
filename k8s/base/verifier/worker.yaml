@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/vultisig/verifier:latest
+          image: docker.io/library/vultisig-worker:local-amd64
           command: ["/usr/local/bin/worker"]
           ports:
             - containerPort: 8089
