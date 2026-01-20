@@ -9,3 +9,5 @@ resources:
   - worker.yaml
   - scheduler.yaml
   - tx-indexer.yaml
+  - pdb.yaml
+  - network-policies.yaml

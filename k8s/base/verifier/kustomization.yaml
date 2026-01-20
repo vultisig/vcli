@@ -8,3 +8,4 @@ resources:
   - verifier.yaml
   - worker.yaml
   - tx-indexer.yaml
+  - seed-plugins.yaml

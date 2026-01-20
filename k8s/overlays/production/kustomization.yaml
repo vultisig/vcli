@@ -13,3 +13,45 @@ resources:
 patchesStrategicMerge:
   - relay-config-patch-verifier.yaml
   - relay-config-patch-dca.yaml
+
+# Image configuration for production
+# Override base images with proper registry and tags
+images:
+  - name: docker.io/library/app-recurring-server
+    newName: ghcr.io/vultisig/app-recurring-server
+    newTag: latest
+  - name: docker.io/library/app-recurring-worker
+    newName: ghcr.io/vultisig/app-recurring-worker
+    newTag: latest
+  - name: docker.io/library/app-recurring-scheduler
+    newName: ghcr.io/vultisig/app-recurring-scheduler
+    newTag: latest
+  - name: docker.io/library/app-recurring-txindexer
+    newName: ghcr.io/vultisig/app-recurring-txindexer
+    newTag: latest
+  - name: docker.io/library/verifier
+    newName: ghcr.io/vultisig/verifier
+    newTag: latest
+  - name: docker.io/library/verifier-worker
+    newName: ghcr.io/vultisig/verifier-worker
+    newTag: latest
+  - name: docker.io/library/verifier-txindexer
+    newName: ghcr.io/vultisig/verifier-txindexer
+    newTag: latest
+
+# Patch deployments to use IfNotPresent pull policy for production
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+    target:
+      kind: Deployment
+      namespace: plugin-dca
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+    target:
+      kind: Deployment
+      namespace: verifier
