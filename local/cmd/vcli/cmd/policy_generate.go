@@ -123,9 +123,22 @@ func runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVault
 		return fmt.Errorf("recipe validation failed: %w", err)
 	}
 
+	// Include default free billing entries (required by DCA plugin)
+	// Both "once" and "per-tx" types are needed to match plugin pricing
 	policy := map[string]any{
-		"recipe":  recipe,
-		"billing": []any{},
+		"recipe": recipe,
+		"billing": []map[string]any{
+			{
+				"type":   "once",
+				"amount": "0",
+				"asset":  "usdc",
+			},
+			{
+				"type":   "per-tx",
+				"amount": "0",
+				"asset":  "usdc",
+			},
+		},
 	}
 
 	jsonBytes, err := json.MarshalIndent(policy, "", "  ")
