@@ -1,5 +1,5 @@
 .PHONY: help init plan apply destroy cluster-setup deploy-all deploy-infra deploy-services test clean
-.PHONY: deploy-k8s deploy-k8s-prod k8s-status
+.PHONY: k8s-status k8s-start k8s-stop k8s-restart
 .PHONY: build start stop status logs
 
 TERRAFORM_DIR := infrastructure/terraform
@@ -24,22 +24,20 @@ help:
 	@echo "Cluster Setup:"
 	@echo "  cluster-setup     Install k3s on all nodes"
 	@echo ""
-	@echo "K8s Deployment:"
-	@echo "  deploy-k8s        Deploy K8s with custom Relay + VultiServer"
-	@echo "  deploy-k8s-prod   Deploy K8s using api.vultisig.com endpoints"
-	@echo "  deploy-all        Deploy everything (legacy)"
-	@echo "  deploy-infra      Deploy infrastructure services only"
-	@echo "  deploy-services   Deploy application services only"
-	@echo "  deploy-monitoring Deploy Prometheus and Grafana"
+	@echo "K8s Deployment (uses production Relay/VultiServer at api.vultisig.com):"
+	@echo "  k8s-start         Deploy + verify all services (RECOMMENDED)"
+	@echo "  k8s-stop          Graceful shutdown"
+	@echo "  k8s-restart       Stop then start"
+	@echo "  deploy-secrets    Deploy secrets only"
 	@echo ""
 	@echo "Testing:"
 	@echo "  test-smoke        Run smoke tests"
-	@echo "  test-partition    Show partition test options"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  logs-verifier     Tail verifier logs"
 	@echo "  logs-worker       Tail worker logs"
-	@echo "  logs-relay        Tail relay logs"
+	@echo "  logs-dca-worker   Tail DCA worker logs"
+	@echo "  k8s-status        Show cluster status"
 	@echo "  port-forward      Port forward services for local access"
 	@echo "  clean             Remove generated files"
 
@@ -87,10 +85,6 @@ deploy-infra: deploy-namespaces deploy-secrets
 	kubectl -n infra wait --for=condition=ready pod -l app=minio --timeout=120s
 	@echo "Infrastructure ready"
 
-deploy-relay:
-	kubectl apply -f k8s/base/relay/
-	kubectl -n relay wait --for=condition=ready pod -l app=relay --timeout=120s
-
 deploy-verifier:
 	kubectl apply -f k8s/base/verifier/
 	kubectl -n verifier wait --for=condition=ready pod -l app=verifier --timeout=300s
@@ -99,58 +93,24 @@ deploy-dca:
 	kubectl apply -f k8s/base/dca/
 	kubectl -n plugin-dca wait --for=condition=ready pod -l app=dca --timeout=300s
 
-deploy-vultiserver:
-	kubectl apply -f k8s/base/vultiserver/
-	kubectl -n vultiserver wait --for=condition=ready pod -l app=vultiserver --timeout=120s
-
 deploy-monitoring:
 	kubectl apply -f k8s/base/monitoring/prometheus/
 	kubectl apply -f k8s/base/monitoring/grafana/
 	kubectl -n monitoring wait --for=condition=ready pod -l app=prometheus --timeout=120s
 	kubectl -n monitoring wait --for=condition=ready pod -l app=grafana --timeout=120s
 
-deploy-services: deploy-relay deploy-verifier deploy-dca deploy-vultiserver deploy-monitoring
+deploy-services: deploy-verifier deploy-dca deploy-monitoring
 
 deploy-all: deploy-infra deploy-services
 
-# Kustomize-based K8s deployment
-deploy-k8s: deploy-secrets
-	@echo "Deploying K8s with custom Relay + VultiServer..."
-	kubectl apply -k k8s/overlays/local
-	@echo ""
-	@echo "Waiting for pods..."
-	kubectl -n infra wait --for=condition=ready pod -l app=postgres --timeout=300s
-	kubectl -n infra wait --for=condition=ready pod -l app=redis --timeout=120s
-	kubectl -n infra wait --for=condition=ready pod -l app=minio --timeout=120s
-	kubectl -n relay wait --for=condition=ready pod -l app=relay --timeout=120s
-	kubectl -n vultiserver wait --for=condition=ready pod -l app=vultiserver --timeout=120s
-	kubectl -n verifier wait --for=condition=ready pod -l app=verifier --timeout=300s
-	kubectl -n plugin-dca wait --for=condition=ready pod -l app=dca --timeout=300s
-	@echo ""
-	@echo "========================================="
-	@echo "  K8s Deployment Complete!"
-	@echo "  Relay:       relay.relay.svc.cluster.local"
-	@echo "  VultiServer: vultiserver.vultiserver.svc.cluster.local"
-	@echo "========================================="
-	kubectl get pods --all-namespaces
+# K8s deploy/start/stop scripts
+k8s-start: deploy-secrets
+	@./infrastructure/scripts/k8s-start.sh
 
-deploy-k8s-prod: deploy-secrets
-	@echo "Deploying K8s with production endpoints (api.vultisig.com)..."
-	kubectl apply -k k8s/overlays/production
-	@echo ""
-	@echo "Waiting for pods..."
-	kubectl -n infra wait --for=condition=ready pod -l app=postgres --timeout=300s
-	kubectl -n infra wait --for=condition=ready pod -l app=redis --timeout=120s
-	kubectl -n infra wait --for=condition=ready pod -l app=minio --timeout=120s
-	kubectl -n verifier wait --for=condition=ready pod -l app=verifier --timeout=300s
-	kubectl -n plugin-dca wait --for=condition=ready pod -l app=dca --timeout=300s
-	@echo ""
-	@echo "========================================="
-	@echo "  K8s Production Deployment Complete!"
-	@echo "  Relay:       https://api.vultisig.com/router"
-	@echo "  VultiServer: https://api.vultisig.com"
-	@echo "========================================="
-	kubectl get pods --all-namespaces
+k8s-stop:
+	@./infrastructure/scripts/k8s-stop.sh
+
+k8s-restart: k8s-stop k8s-start
 
 # ============== Testing ==============
 
@@ -176,9 +136,6 @@ logs-verifier:
 
 logs-worker:
 	kubectl -n verifier logs -l app=verifier,component=worker -f
-
-logs-relay:
-	kubectl -n relay logs -l app=relay -f
 
 logs-dca-worker:
 	kubectl -n plugin-dca logs -l app=dca,component=worker -f

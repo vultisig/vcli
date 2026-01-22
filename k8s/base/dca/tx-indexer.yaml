@@ -25,6 +25,7 @@ spec:
       containers:
         - name: tx-indexer
           image: docker.io/library/app-recurring-txindexer:local-amd64
+          imagePullPolicy: Never
           command: ["/app/tx_indexer"]
           ports:
             - containerPort: 8183

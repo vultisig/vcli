@@ -20,7 +20,7 @@ apt-get install -y curl wget open-iscsi nfs-common
 curl -sfL https://get.k3s.io | sh -s - server \
     --token "$K3S_TOKEN" \
     --node-label "topology.kubernetes.io/region=fsn1" \
-    --node-label "node-role.kubernetes.io/master=true" \
+    --node-label "node.kubernetes.io/role=master" \
     --flannel-backend=wireguard-native \
     --disable traefik \
     --disable servicelb \

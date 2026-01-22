@@ -12,9 +12,17 @@ hcloud_token = "your-hetzner-api-token"
 # Optional: customize cluster name
 # cluster_name = "vultisig"
 
-# Optional: customize server types
-# master_server_type = "cx31"  # 2 vCPU, 8GB RAM
-# worker_server_type = "cx41"  # 4 vCPU, 16GB RAM
+# Optional: customize server types (MUST be AMD64 for GHCR images)
+# Default: ccx13/ccx23 (dedicated AMD64, always available)
+# master_server_type = "ccx13"  # 2 dedicated vCPU, 8GB RAM (~€13/mo)
+# worker_server_type = "ccx23"  # 4 dedicated vCPU, 16GB RAM (~€25/mo)
+#
+# Alternative (cheaper but often out of stock in EU):
+# master_server_type = "cpx11"
+# worker_server_type = "cpx31"
+#
+# DO NOT USE ARM servers (cax*) - GHCR images are AMD64 only
 
-# Optional: customize regions (default: all 3)
-# regions = ["fsn1", "nbg1", "hel1"]
+# Optional: customize region (default: hel1)
+# Check availability first: ./infrastructure/scripts/check-availability.sh
+# regions = ["hel1"]

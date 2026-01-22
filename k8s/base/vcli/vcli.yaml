@@ -14,14 +14,22 @@ spec:
     env:
     # Service URLs (in-cluster)
     - name: VCLI_VERIFIER_URL
-      value: "http://verifier.verifier.svc.cluster.local:8080"
+      valueFrom:
+        configMapKeyRef:
+          name: vcli-config
+          key: verifier-url
     - name: VCLI_DCA_PLUGIN_URL
-      value: "http://dca-server.plugin-dca.svc.cluster.local:8080"
+      value: "http://server-swap.plugin-dca.svc.cluster.local:8082"
     - name: VCLI_RELAY_URL
       valueFrom:
         configMapKeyRef:
           name: relay-config
           key: url
+    - name: VCLI_FAST_VAULT_URL
+      valueFrom:
+        configMapKeyRef:
+          name: vcli-config
+          key: fast-vault-url
     # Database (read-only access for queries)
     - name: VCLI_DATABASE_DSN
       valueFrom:

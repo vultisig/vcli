@@ -592,3 +592,17 @@ rm ~/.vultisig/lib/linux/.downloaded-master   # Linux
 # Then run any vcli command to trigger download
 ./local/vcli.sh --help
 ```
+
+---
+
+## Kubernetes Deployment
+
+For production Kubernetes deployment on Hetzner Cloud, see **[infrastructure/DEPLOYMENT.md](infrastructure/DEPLOYMENT.md)**.
+
+The K8s deployment guide covers:
+- Terraform-based infrastructure provisioning
+- K3s cluster setup
+- Service deployment with kustomize overlays
+- E2E testing in Kubernetes
+- Server type and region selection (AMD64 required for GHCR images)
+- Troubleshooting guide with common errors and fixes

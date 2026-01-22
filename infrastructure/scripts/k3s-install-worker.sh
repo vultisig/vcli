@@ -26,7 +26,7 @@ apt-get install -y curl wget open-iscsi nfs-common
 # Install k3s agent
 curl -sfL https://get.k3s.io | K3S_URL="https://${MASTER_URL}:6443" K3S_TOKEN="$K3S_TOKEN" sh -s - agent \
     --node-label "topology.kubernetes.io/region=$REGION" \
-    --node-label "node-role.kubernetes.io/worker=true"
+    --node-label "node.kubernetes.io/role=worker"
 
 echo ""
 echo "=== Worker node joined cluster ==="

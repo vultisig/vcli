@@ -57,13 +57,19 @@ data:
   blast: "https://rpc.blast.io"
   optimism: "https://optimism-rpc.publicnode.com"
   polygon: "https://polygon-bor-rpc.publicnode.com"
+  zksync: "https://mainnet.era.zksync.io"
+  cronos: "https://evm.cronos.org"
   solana: "https://solana-rpc.publicnode.com"
-  litecoin: "https://api.blockchair.com/litecoin"
-  dogecoin: "https://api.blockchair.com/dogecoin"
-  bitcoin: "https://api.blockchair.com/bitcoin"
-  bitcoincash: "https://api.blockchair.com/bitcoin-cash"
+  litecoin: "https://litecoin-rpc.publicnode.com"
+  dogecoin: "https://dogecoin-rpc.publicnode.com"
+  bitcoin: "https://bitcoin-rpc.publicnode.com"
+  bitcoincash: "https://bitcoincash-rpc.publicnode.com"
   thorchain: "https://thornode.ninerealms.com"
   mayachain: "https://mayanode.mayachain.info"
+  cosmos: "https://cosmos-rest.publicnode.com"
+  tron: "https://api.trongrid.io"
+  dash: "https://dash-rpc.publicnode.com"
+  zcash: "https://zcash-rpc.publicnode.com"
 ---
 apiVersion: v1
 kind: ConfigMap

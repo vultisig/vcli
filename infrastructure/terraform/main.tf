@@ -57,17 +57,17 @@ resource "hcloud_network_subnet" "helsinki" {
   ip_range     = "10.2.0.0/16"
 }
 
-# Master node in Falkenstein
+# Master node in Nuremberg (fsn1 out of cpx capacity)
 resource "hcloud_server" "master" {
   name        = "${var.cluster_name}-master"
   server_type = var.master_server_type
   image       = "ubuntu-24.04"
-  location    = "fsn1"
+  location    = "hel1"
   ssh_keys    = [hcloud_ssh_key.cluster.id]
 
   labels = {
     role    = "master"
-    region  = "fsn1"
+    region  = "hel1"
     cluster = var.cluster_name
   }
 
@@ -117,39 +117,39 @@ resource "hcloud_server" "workers" {
 resource "hcloud_volume" "postgres" {
   name     = "${var.cluster_name}-postgres"
   size     = 50
-  location = "fsn1"
+  location = "hel1"
   format   = "ext4"
 }
 
 resource "hcloud_volume" "redis" {
   name     = "${var.cluster_name}-redis"
   size     = 10
-  location = "fsn1"
+  location = "hel1"
   format   = "ext4"
 }
 
 resource "hcloud_volume" "minio" {
   name     = "${var.cluster_name}-minio"
   size     = 50
-  location = "fsn1"
+  location = "hel1"
   format   = "ext4"
 }
 
 resource "hcloud_volume_attachment" "postgres" {
   volume_id = hcloud_volume.postgres.id
-  server_id = hcloud_server.workers["fsn1"].id
+  server_id = hcloud_server.workers["hel1"].id
   automount = true
 }
 
 resource "hcloud_volume_attachment" "redis" {
   volume_id = hcloud_volume.redis.id
-  server_id = hcloud_server.workers["fsn1"].id
+  server_id = hcloud_server.workers["hel1"].id
   automount = true
 }
 
 resource "hcloud_volume_attachment" "minio" {
   volume_id = hcloud_volume.minio.id
-  server_id = hcloud_server.workers["fsn1"].id
+  server_id = hcloud_server.workers["hel1"].id
   automount = true
 }
 
@@ -237,7 +237,7 @@ resource "local_file" "setup_env" {
     master_private  = "10.1.0.10"
     k3s_token       = local.k3s_token
     workers         = { for k, v in hcloud_server.workers : k => v.ipv4_address }
-    ssh_key_path    = var.ssh_public_key == "" ? "${path.module}/../../.ssh/id_ed25519" : ""
+    ssh_key_path    = var.ssh_public_key == "" ? "./.ssh/id_ed25519" : ""
   })
   filename        = "${path.module}/../../setup-env.sh"
   file_permission = "0755"
