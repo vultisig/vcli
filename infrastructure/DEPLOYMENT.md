@@ -455,12 +455,15 @@ ssh root@<node-ip> "journalctl -u k3s -f"
 The `k8s-start.sh` script handles full deployment with verification:
 
 ```bash
-./infrastructure/scripts/k8s-start.sh              # Production overlay
-./infrastructure/scripts/k8s-start.sh --local      # Local overlay (internal relay)
+./infrastructure/scripts/k8s-start.sh              # Deploy and verify
 ./infrastructure/scripts/k8s-start.sh --skip-seed  # Skip database seeding
 ```
 
-**What it does:**
+**External services (production endpoints):**
+- Relay: `https://api.vultisig.com/router`
+- VultiServer/FastVault: `https://api.vultisig.com`
+
+**What it deploys:**
 1. Applies kustomize overlay (creates namespaces, deploys pods)
 2. Applies secrets
 3. Recreates jobs (minio-init, seed-plugins)
@@ -489,11 +492,9 @@ Graceful shutdown with cleanup:
 
 ```bash
 make deploy-secrets     # Deploy secrets to cluster
-make deploy-k8s-prod    # Deploy all services using GHCR images
-make deploy-k8s-local   # Deploy using local images (for development)
+make k8s-start          # Deploy + verify (recommended)
+make k8s-stop           # Graceful shutdown
 make delete-k8s         # Delete all Kubernetes resources
-make k8s-start          # Run k8s-start.sh
-make k8s-stop           # Run k8s-stop.sh
 ```
 
 ---
@@ -566,10 +567,8 @@ make k8s-stop           # Run k8s-stop.sh
 
 ### Relay Configuration (Critical)
 
-21. **Relay URL Must Match Across All Parties** - All TSS parties (vcli, verifier worker, DCA worker) must connect to the **same relay server**. vcli uses hardcoded `https://api.vultisig.com/router`, so K8s workers MUST be patched to use the production relay.
-    - **Base manifests**: Use internal relay (`relay.relay.svc.cluster.local`) - for local dev only
-    - **Production overlay**: Patches both namespaces to use `https://api.vultisig.com/router`
-    - **Always deploy with**: `kubectl apply -k k8s/overlays/production` (NOT `k8s/base`)
+21. **Relay URL Must Match Across All Parties** - All TSS parties (vcli, verifier worker, DCA worker) must connect to the **same relay server**. The production overlay configures all workers to use `https://api.vultisig.com/router`.
+    - **Deploy command**: `./infrastructure/scripts/k8s-start.sh` (uses production overlay)
     - If workers use different relays, reshare will hang at 2 parties forever
 
 ### Database Seeding
@@ -586,7 +585,7 @@ make k8s-stop           # Run k8s-stop.sh
 
 **Symptom:** Plugin install shows "Waiting for more parties... parties=2" forever
 
-**Root Cause:** vcli uses hardcoded relay (`https://api.vultisig.com/router`) but K8s workers are connecting to internal relay. All parties must use the SAME relay server to coordinate the TSS session.
+**Root Cause:** All TSS parties must use the SAME relay server to coordinate sessions.
 
 **Diagnosis:**
 ```bash
@@ -595,13 +594,12 @@ kubectl exec -n verifier deploy/worker -- env | grep RELAY
 kubectl exec -n plugin-dca deploy/worker -- env | grep RELAY
 
 # Both should show: RELAY_URL=https://api.vultisig.com/router
-# If they show relay.relay.svc.cluster.local, production overlay wasn't applied
 ```
 
 **Fix:**
 ```bash
-# Ensure production overlay is applied (patches relay URLs)
-kubectl apply -k k8s/overlays/production
+# Redeploy with k8s-start.sh
+./infrastructure/scripts/k8s-start.sh
 
 # Verify relay configmaps are patched
 kubectl get cm relay-config -n verifier -o yaml | grep url

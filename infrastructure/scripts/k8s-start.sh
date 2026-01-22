@@ -1,17 +1,24 @@
 #!/bin/bash
 #
-# K8s Start Script - Start Vultisig services on K8s
-# Mirrors local `make start` behavior for K8s environment
+# K8s Start Script - Deploy and start Vultisig services on K8s
+#
+# Deploys:
+#   - Infrastructure: PostgreSQL, Redis, MinIO
+#   - Verifier: API + Worker (from GHCR images)
+#   - DCA Plugin: Server + Worker + Scheduler (from GHCR images)
+#   - VCLI pod for testing
+#
+# Uses production endpoints for:
+#   - Relay: https://api.vultisig.com/router
+#   - VultiServer/FastVault: https://api.vultisig.com
 #
 # Usage:
-#   ./k8s-start.sh              # Start with production overlay (api.vultisig.com)
-#   ./k8s-start.sh --local      # Start with local overlay (internal relay)
+#   ./k8s-start.sh              # Full deploy with verification
 #   ./k8s-start.sh --skip-seed  # Skip database seeding
 #
 # Prerequisites:
 #   - kubectl configured with cluster access
 #   - k8s/secrets.yaml must exist with valid secrets
-#   - KUBECONFIG env var or ~/.kube/config or ./kube/config
 
 set -e
 
@@ -26,13 +33,9 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Parse flags
-OVERLAY="production"
 SKIP_SEED=false
 for arg in "$@"; do
     case $arg in
-        --local)
-            OVERLAY="local"
-            ;;
         --skip-seed)
             SKIP_SEED=true
             ;;
@@ -49,8 +52,7 @@ if [[ -z "$KUBECONFIG" ]]; then
 fi
 
 echo -e "${CYAN}==========================================${NC}"
-echo -e "${CYAN}  Vultisig K8s Start${NC}"
-echo -e "${CYAN}  Overlay: $OVERLAY${NC}"
+echo -e "${CYAN}  Vultisig K8s Deploy${NC}"
 echo -e "${CYAN}==========================================${NC}"
 echo ""
 
@@ -78,8 +80,8 @@ fi
 # STEP 1: Apply kustomize overlay (creates namespaces)
 # ============================================
 
-echo -e "${CYAN}Applying $OVERLAY overlay...${NC}"
-kubectl apply -k "$VCLI_DIR/k8s/overlays/$OVERLAY" 2>&1 | grep -v "^#" || true
+echo -e "${CYAN}Applying production overlay...${NC}"
+kubectl apply -k "$VCLI_DIR/k8s/overlays/production" 2>&1 | grep -v "^#" || true
 echo -e "  ${GREEN}✓${NC} Manifests applied"
 
 # ============================================
@@ -99,7 +101,7 @@ kubectl -n infra delete job minio-init --ignore-not-found 2>/dev/null || true
 kubectl -n verifier delete job seed-plugins --ignore-not-found 2>/dev/null || true
 sleep 2
 # Reapply to recreate jobs
-kubectl apply -k "$VCLI_DIR/k8s/overlays/$OVERLAY" 2>&1 | grep -v "^#" | grep -v "unchanged" || true
+kubectl apply -k "$VCLI_DIR/k8s/overlays/production" 2>&1 | grep -v "^#" | grep -v "unchanged" || true
 echo -e "  ${GREEN}✓${NC} Jobs recreated"
 
 # ============================================
@@ -378,14 +380,8 @@ echo -e "${CYAN}==========================================${NC}"
 echo -e "${GREEN}  STARTUP COMPLETE${NC}"
 echo -e "${CYAN}==========================================${NC}"
 echo ""
-echo -e "  ${CYAN}Overlay:${NC} $OVERLAY"
-if [[ "$OVERLAY" == "production" ]]; then
-    echo -e "  ${CYAN}Relay:${NC} https://api.vultisig.com/router"
-    echo -e "  ${CYAN}VultiServer:${NC} https://api.vultisig.com"
-else
-    echo -e "  ${CYAN}Relay:${NC} relay.relay.svc.cluster.local"
-    echo -e "  ${CYAN}VultiServer:${NC} vultiserver.vultiserver.svc.cluster.local"
-fi
+echo -e "  ${CYAN}Relay:${NC} https://api.vultisig.com/router (production)"
+echo -e "  ${CYAN}VultiServer:${NC} https://api.vultisig.com (production)"
 echo ""
 echo -e "  ${CYAN}Services:${NC}"
 echo -e "    verifier/verifier     (API)"
