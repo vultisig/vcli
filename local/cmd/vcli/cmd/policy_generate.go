@@ -287,10 +287,14 @@ func fetchPluginBilling(pluginID string) ([]map[string]any, error) {
 
 	var billing []map[string]any
 	for _, p := range targetPricing {
+		frequency := ""
+		if p.Frequency != nil {
+			frequency = *p.Frequency
+		}
 		entry := map[string]any{
-			"type":   p.Type,
-			"asset":  p.Asset,
-			"amount": uint64(p.Amount),
+			"type":      p.Type,
+			"frequency": frequency,
+			"amount":    uint64(p.Amount),
 		}
 		billing = append(billing, entry)
 	}
