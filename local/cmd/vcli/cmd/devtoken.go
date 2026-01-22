@@ -27,7 +27,7 @@ func runDevToken() error {
 	}
 	vault := vaults[0]
 
-	jwtSecret := []byte("dev-jwt-secret-change-in-production")
+	jwtSecret := []byte("devsecret")
 
 	tokenID := uuid.New().String()
 	expirationTime := time.Now().Add(7 * 24 * time.Hour)

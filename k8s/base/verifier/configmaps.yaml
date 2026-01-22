@@ -54,8 +54,29 @@ data:
   blast: "https://rpc.blast.io"
   optimism: "https://optimism-rpc.publicnode.com"
   polygon: "https://polygon-bor-rpc.publicnode.com"
+  zksync: "https://mainnet.era.zksync.io"
+  cronos: "https://evm.cronos.org"
   solana: "https://solana-rpc.publicnode.com"
   litecoin: "https://api.blockchair.com/litecoin"
   dogecoin: "https://api.blockchair.com/dogecoin"
   bitcoin: "https://api.blockchair.com/bitcoin"
   bitcoincash: "https://api.blockchair.com/bitcoin-cash"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vcli-config
+  namespace: verifier
+data:
+  verifier-url: "http://verifier.verifier.svc.cluster.local:8080"
+  fast-vault-url: "https://api.vultisig.com"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plugin-endpoints
+  namespace: verifier
+data:
+  dca-swap-url: "http://server-swap.plugin-dca.svc.cluster.local:8082"
+  dca-send-url: "http://server-send.plugin-dca.svc.cluster.local:8083"
+  fee-url: "http://server.plugin-fee.svc.cluster.local:8085"
