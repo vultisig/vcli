@@ -13,9 +13,7 @@ Production-ready Kubernetes deployment for Vultisig services on Hetzner Cloud.
 
 ---
 
-## Quick Start (Full E2E Deployment)
-
-### One-Shot Deploy + Test
+## Quick Start (Full Deployment)
 
 ```bash
 cd /Users/dev/dev/vultisig/vcli
@@ -30,20 +28,27 @@ source .env.k8s
 
 # 3. Deploy and start services (single command)
 export KUBECONFIG=$(pwd)/.kube/config
-make deploy-secrets && ./infrastructure/scripts/k8s-start.sh
-
-# 4. Run E2E test
-./infrastructure/scripts/e2e-test.sh
+make k8s-start
 ```
 
-### Manual E2E Test Commands
+### E2E Test Commands
 
 ```bash
+# Import vault
 kubectl exec -n verifier vcli -- vcli vault import --file /vault/vault.vult --password "Password123"
+
+# Install DCA plugin (4-party TSS reshare)
 kubectl exec -n verifier vcli -- vcli plugin install dca --password "Password123"
+
+# Generate swap policy
 kubectl exec -n verifier vcli -- vcli policy generate --from usdc --to btc --amount 10 --output /tmp/policy.json
+
+# Add policy
 kubectl exec -n verifier vcli -- vcli policy add --plugin dca --policy-file /tmp/policy.json --password "Password123"
+
+# Monitor
 kubectl exec -n verifier vcli -- vcli policy list --plugin dca
+kubectl -n plugin-dca logs -f deploy/worker
 ```
 
 ---

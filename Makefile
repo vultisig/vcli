@@ -1,5 +1,5 @@
 .PHONY: help init plan apply destroy cluster-setup deploy-all deploy-infra deploy-services test clean
-.PHONY: k8s-status k8s-start k8s-stop k8s-restart e2e-test
+.PHONY: k8s-status k8s-start k8s-stop k8s-restart
 .PHONY: build start stop status logs
 
 TERRAFORM_DIR := infrastructure/terraform
@@ -28,7 +28,6 @@ help:
 	@echo "  k8s-start         Deploy + verify all services (RECOMMENDED)"
 	@echo "  k8s-stop          Graceful shutdown"
 	@echo "  k8s-restart       Stop then start"
-	@echo "  e2e-test          Run full E2E test"
 	@echo "  deploy-secrets    Deploy secrets only"
 	@echo ""
 	@echo "Testing:"
@@ -112,9 +111,6 @@ k8s-stop:
 	@./infrastructure/scripts/k8s-stop.sh
 
 k8s-restart: k8s-stop k8s-start
-
-e2e-test:
-	@./infrastructure/scripts/e2e-test.sh
 
 # ============== Testing ==============
 
