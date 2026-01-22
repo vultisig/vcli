@@ -17,18 +17,24 @@ Production-ready Kubernetes deployment for Vultisig services on Hetzner Cloud.
 
 ```bash
 cd /Users/dev/dev/vultisig/vcli
-source .env.k8s
 
-# 1. Create infrastructure (if not exists)
-# See "Phase 1: Infrastructure Setup" for manual hcloud commands
-# Or use Terraform: cd infrastructure/terraform && terraform apply
+# 1. Check server type availability before deploying
+./infrastructure/scripts/check-availability.sh
 
-# 2. Setup K3s on nodes
+# 2. Create infrastructure with Terraform
+cd infrastructure/terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your Hetzner API token
+terraform init && terraform apply
+
+# 3. Setup K3s on nodes
+cd ../..
+source setup-env.sh
 ./infrastructure/scripts/setup-cluster.sh
 
-# 3. Deploy and start services (single command)
+# 4. Deploy and start services
 export KUBECONFIG=$(pwd)/.kube/config
-make k8s-start
+./infrastructure/scripts/k8s-start.sh
 ```
 
 ### E2E Test Commands
@@ -70,18 +76,33 @@ kubectl -n plugin-dca logs -f deploy/worker
 
 ### Server Types by Location
 
-Not all server types are available in all locations.
+**IMPORTANT: GHCR images are AMD64 only.** ARM servers (cax*) will fail with "exec format error".
 
-| Location | Recommended Type | Notes |
-|----------|------------------|-------|
-| Singapore (`sin`) | `cpx32` | `cpx31` NOT available |
-| EU locations | `cpx31` | Full availability |
-| US locations | `cpx31` or `cpx32` | Check availability |
+| Type Family | Architecture | Notes |
+|-------------|--------------|-------|
+| `cax*` | ARM64 | **NOT compatible with GHCR images** |
+| `cpx*` | AMD64 (shared) | Often out of stock in EU regions |
+| `ccx*` | AMD64 (dedicated) | **Recommended** - available everywhere |
+| `cx*` | Intel (shared) | Check availability |
 
-**Check availability:**
-```bash
-hcloud server-type list --output columns=name,description,cores,memory
+**Current working configuration:**
 ```
+Master: ccx13 (2 dedicated vCPU, 8GB RAM) - ~€13/mo
+Worker: ccx23 (4 dedicated vCPU, 16GB RAM) - ~€25/mo
+Region: hel1 (Helsinki)
+```
+
+**Check availability before deployment:**
+```bash
+# Use the availability script
+./infrastructure/scripts/check-availability.sh
+
+# Or manually
+hcloud server-type describe ccx23 -o json | jq '.prices[] | "\(.location): \(.price_monthly.gross)"'
+```
+
+**If cpx* is out of stock:**
+Switch to dedicated ccx* servers (slightly more expensive but always available).
 
 ### SSH Key Requirement
 
@@ -104,52 +125,94 @@ hcloud server create \
 
 ---
 
-## Phase 1: Infrastructure Setup
+## Phase 1: Infrastructure Setup (Terraform)
 
-### Create Servers
+The recommended approach uses Terraform for reproducible infrastructure.
+
+### Prerequisites
+
+1. **Hetzner API Token**: Get from Hetzner Cloud Console → Security → API Tokens
+2. **Vault keyshare file**: Export from Vultisig mobile app to `local/keyshares/`
+3. **hcloud CLI**: `brew install hcloud` (macOS) or download from Hetzner
+
+### Check Availability
+
+Before deploying, check server type availability in your target region:
 
 ```bash
-source .env.k8s
-export HCLOUD_TOKEN
-
-# Check existing servers
-hcloud server list
-
-# Delete old servers if needed
-hcloud server delete vultisig-master-1 --poll-interval 5s || true
-hcloud server delete vultisig-worker-1 --poll-interval 5s || true
-hcloud server delete vultisig-worker-2 --poll-interval 5s || true
-hcloud server delete vultisig-worker-3 --poll-interval 5s || true
-
-# Create 4 servers in Singapore (use cpx32, cpx31 not available)
-hcloud server create --type cpx32 --image ubuntu-22.04 --name vultisig-master-1 --location sin --ssh-key dev-key
-hcloud server create --type cpx32 --image ubuntu-22.04 --name vultisig-worker-1 --location sin --ssh-key dev-key
-hcloud server create --type cpx32 --image ubuntu-22.04 --name vultisig-worker-2 --location sin --ssh-key dev-key
-hcloud server create --type cpx32 --image ubuntu-22.04 --name vultisig-worker-3 --location sin --ssh-key dev-key
-
-# Wait for servers to be ready
-sleep 30
-hcloud server list
+./infrastructure/scripts/check-availability.sh
 ```
 
-### Create Setup Environment
+This shows:
+- Specs for master (ccx13) and worker (ccx23) server types
+- Pricing and availability per region
+- Which regions have capacity
+
+### Deploy with Terraform
 
 ```bash
-MASTER_IP=$(hcloud server ip vultisig-master-1)
-WORKER1_IP=$(hcloud server ip vultisig-worker-1)
-WORKER2_IP=$(hcloud server ip vultisig-worker-2)
-WORKER3_IP=$(hcloud server ip vultisig-worker-3)
+cd infrastructure/terraform
 
+# Create config file
+cp terraform.tfvars.example terraform.tfvars
+
+# Edit with your Hetzner API token
+echo 'hcloud_token = "your-token-here"' > terraform.tfvars
+
+# Optional: customize server types or region
+# Edit variables.tf to change defaults, or override:
+# terraform apply -var="worker_server_type=ccx33" -var="regions=[\"nbg1\"]"
+
+# Initialize and apply
+terraform init
+terraform apply
+```
+
+**What Terraform creates:**
+- Master node (ccx13) with K3s control plane
+- Worker node (ccx23) for workloads
+- Persistent volumes: PostgreSQL (50GB), Redis (10GB), MinIO (50GB)
+- Private network for cluster communication
+- Firewall rules for SSH, K8s API, and NodePorts
+- SSH keys (generated if not provided)
+- `setup-env.sh` script with all connection details
+
+### Generated Files
+
+After `terraform apply`, these files are created in the vcli root:
+- `setup-env.sh` - Environment variables for cluster setup
+- `.ssh/id_ed25519` - SSH private key (if generated)
+- `.ssh/id_ed25519.pub` - SSH public key
+
+### Manual Server Creation (Alternative)
+
+If you prefer manual control:
+
+```bash
+export HCLOUD_TOKEN="your-token"
+
+# Create servers (use ccx* for AMD64 compatibility)
+hcloud server create --type ccx13 --image ubuntu-24.04 --name vultisig-master --location hel1 --ssh-key your-key
+hcloud server create --type ccx23 --image ubuntu-24.04 --name vultisig-worker --location hel1 --ssh-key your-key
+
+# Create volumes
+hcloud volume create --name vultisig-postgres --size 50 --location hel1 --format ext4
+hcloud volume create --name vultisig-redis --size 10 --location hel1 --format ext4
+hcloud volume create --name vultisig-minio --size 50 --location hel1 --format ext4
+
+# Attach volumes to worker
+hcloud volume attach vultisig-postgres --server vultisig-worker --automount
+hcloud volume attach vultisig-redis --server vultisig-worker --automount
+hcloud volume attach vultisig-minio --server vultisig-worker --automount
+
+# Create setup-env.sh manually
 cat > setup-env.sh << EOF
-export MASTER_IP="$MASTER_IP"
-export MASTER_PRIVATE_IP="$MASTER_IP"
-export WORKER_FSN1_IP="$WORKER1_IP"
-export WORKER_NBG1_IP="$WORKER2_IP"
-export WORKER_HEL1_IP="$WORKER3_IP"
-export K3S_TOKEN="vultisig-k3s-token-$(date +%s)"
+export MASTER_IP="$(hcloud server ip vultisig-master)"
+export MASTER_PRIVATE_IP="10.1.0.10"
+export K3S_TOKEN="$(openssl rand -hex 32)"
+export WORKER_HEL1_IP="$(hcloud server ip vultisig-worker)"
+export SSH_KEY_PATH="./.ssh/id_ed25519"
 EOF
-
-source setup-env.sh
 ```
 
 ---
@@ -407,23 +470,32 @@ ssh root@<node-ip> "journalctl -u k3s -f"
 
 ## Architecture
 
+**Default deployment (single worker):**
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Hetzner Cloud (Singapore)                 │
-├─────────────────────────────────────────────────────────────┤
-│  vultisig-master-1 (cpx32)                                  │
-│    └── K3s control plane                                    │
-│                                                             │
-│  vultisig-worker-1 (cpx32)                                  │
-│    ├── verifier (API + worker + tx-indexer)                 │
-│    └── infra (postgres, redis, minio)                       │
-│                                                             │
-│  vultisig-worker-2 (cpx32)                                  │
-│    └── plugin-dca (server + scheduler + worker + tx-indexer)│
-│                                                             │
-│  vultisig-worker-3 (cpx32)                                  │
-│    └── relay                                                │
-└─────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                  Hetzner Cloud (Helsinki - hel1)              │
+├───────────────────────────────────────────────────────────────┤
+│  vultisig-master (ccx13 - 2 vCPU, 8GB)                        │
+│    └── K3s control plane                                      │
+│                                                               │
+│  vultisig-worker-hel1 (ccx23 - 4 vCPU, 16GB)                  │
+│    ├── infra: postgres, redis, minio (with Hetzner volumes)   │
+│    ├── verifier: API + worker + tx-indexer + vcli             │
+│    └── plugin-dca: server + scheduler + worker + tx-indexer   │
+│                                                               │
+│  Persistent Volumes (attached to worker):                     │
+│    ├── vultisig-postgres (50GB)                               │
+│    ├── vultisig-redis (10GB)                                  │
+│    └── vultisig-minio (50GB)                                  │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Multi-worker deployment (optional):**
+```
+# To deploy multiple workers, edit variables.tf:
+variable "regions" {
+  default = ["hel1", "fsn1", "nbg1"]  # Multiple regions
+}
 ```
 
 ---
@@ -504,10 +576,61 @@ make delete-k8s         # Delete all Kubernetes resources
 
 ---
 
+## Teardown
+
+### Stop Services (Keep Infrastructure)
+
+```bash
+./infrastructure/scripts/k8s-stop.sh
+```
+
+This stops K8s services but keeps the servers and volumes for redeployment.
+
+### Full Teardown (Destroy Infrastructure)
+
+```bash
+cd infrastructure/terraform
+terraform destroy
+```
+
+This removes:
+- All Hetzner servers (master + workers)
+- All Hetzner volumes (postgres, redis, minio data is DELETED)
+- Network resources (VPC, subnets)
+- Firewall rules
+- SSH keys (if generated by Terraform)
+
+**Manual teardown (if Terraform state is lost):**
+
+```bash
+export HCLOUD_TOKEN="your-token"
+
+# Delete servers
+hcloud server delete vultisig-master
+hcloud server delete vultisig-worker-hel1
+
+# Delete volumes (DATA WILL BE LOST)
+hcloud volume delete vultisig-postgres
+hcloud volume delete vultisig-redis
+hcloud volume delete vultisig-minio
+
+# Delete network
+hcloud network delete vultisig-network
+
+# Delete firewall
+hcloud firewall delete vultisig-firewall
+
+# Delete SSH key (if generated)
+hcloud ssh-key delete vultisig-cluster-key
+```
+
+---
+
 ## Version History
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-22 | 1.1 | Switched to Terraform, AMD64 servers (ccx13/ccx23), added availability check script |
 | 2026-01-21 | 1.0 | Initial deployment to Singapore |
 
 ---
@@ -581,6 +704,30 @@ make delete-k8s         # Delete all Kubernetes resources
 22. **Pricing Table Has No Unique Constraint** - The `pricings` table lacks a unique constraint on `(type, plugin_id, frequency)`. The `ON CONFLICT DO NOTHING` clause is ineffective without a constraint. Running the seed script multiple times creates duplicates.
     - **Fix**: Seed SQL now uses `DELETE + INSERT` pattern to prevent duplicates
     - **If duplicates exist**: Clean up with `DELETE FROM pricings WHERE plugin_id = 'vultisig-dca-0000' AND id NOT IN (SELECT id FROM pricings WHERE plugin_id = 'vultisig-dca-0000' ORDER BY created_at ASC LIMIT 2);`
+
+### Node Sizing & Deployment
+
+23. **Node Sizing** - Worker nodes should be ccx23 (4 dedicated vCPU, 16GB) minimum for all services to run without CPU throttling.
+
+24. **Test Vault Secret** - `k8s-start.sh` auto-creates `test-vault` secret from `local/keyshares/FastPlugin1-a06a-share2of2.vult`. Ensure this file exists before running the script.
+
+25. **Rolling Restart After Infra** - After infrastructure restart, application pods need rolling restart to pick up fresh service IPs (e.g., postgres moving nodes). Automated in `k8s-start.sh` as STEP 4.5.
+
+### Architecture Compatibility
+
+26. **GHCR Images are AMD64 Only** - All GHCR images (`ghcr.io/vultisig/*`) are built for AMD64. ARM64 servers (cax*) will fail with "exec format error" or "no match for platform in manifest".
+    - **DO NOT use:** cax11, cax21, cax31, cax41 (ARM64)
+    - **Use instead:** ccx13, ccx23, ccx33 (AMD64 dedicated) or cpx11, cpx21, cpx31 (AMD64 shared)
+
+27. **Server Availability Varies by Region** - cpx* (shared AMD64) servers are often out of stock in EU regions (fsn1, nbg1, hel1). Use `./infrastructure/scripts/check-availability.sh` to verify before deployment.
+    - **Fallback:** ccx* dedicated servers are always available (slightly higher cost)
+
+28. **Terraform Manages Infrastructure** - Use `infrastructure/terraform/` for reproducible deployments:
+    ```bash
+    terraform apply                    # Create infrastructure
+    terraform destroy                  # Tear down all resources
+    terraform apply -var="regions=[\"nbg1\"]"  # Override region
+    ```
 
 ---
 

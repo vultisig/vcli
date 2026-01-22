@@ -93,6 +93,22 @@ kubectl apply -f "$VCLI_DIR/k8s/secrets.yaml"
 echo -e "  ${GREEN}✓${NC} Secrets applied"
 
 # ============================================
+# STEP 2.5: Create test-vault secret (for E2E testing)
+# ============================================
+
+echo -e "${CYAN}Creating test-vault secret...${NC}"
+
+KEYSHARE_FILE="$VCLI_DIR/local/keyshares/FastPlugin1-a06a-share2of2.vult"
+if [[ -f "$KEYSHARE_FILE" ]]; then
+    kubectl -n verifier delete secret test-vault --ignore-not-found 2>/dev/null || true
+    kubectl -n verifier create secret generic test-vault --from-file=vault.vult="$KEYSHARE_FILE"
+    echo -e "  ${GREEN}✓${NC} test-vault secret created"
+else
+    echo -e "  ${YELLOW}⚠${NC} Keyshare not found: $KEYSHARE_FILE"
+    echo -e "  ${YELLOW}⚠${NC} Create manually: kubectl -n verifier create secret generic test-vault --from-file=vault.vult=<keyshare>"
+fi
+
+# ============================================
 # STEP 3: Delete existing jobs (they're immutable) and recreate
 # ============================================
 
@@ -121,6 +137,17 @@ echo -e "  ${GREEN}✓${NC} Redis ready"
 echo -e "  ${YELLOW}⏳${NC} MinIO..."
 kubectl -n infra wait --for=condition=ready pod -l app=minio --timeout=120s
 echo -e "  ${GREEN}✓${NC} MinIO ready"
+
+# ============================================
+# STEP 4.5: Rolling restart to pick up fresh infra IPs
+# ============================================
+
+echo -e "${CYAN}Rolling restart of application deployments...${NC}"
+
+kubectl -n verifier rollout restart deployment/verifier deployment/worker 2>/dev/null || true
+kubectl -n plugin-dca rollout restart deployment/server-swap deployment/server-send deployment/worker deployment/scheduler 2>/dev/null || true
+
+echo -e "  ${GREEN}✓${NC} Rolling restart initiated"
 
 # ============================================
 # STEP 5: Wait for application services

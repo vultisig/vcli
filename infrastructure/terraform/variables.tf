@@ -26,17 +26,17 @@ variable "cluster_name" {
 variable "master_server_type" {
   description = "Server type for master node"
   type        = string
-  default     = "cax11" # 2 vCPU, 4GB RAM (ARM)
+  default     = "ccx13" # 2 dedicated vCPU, 8GB RAM (AMD64) - GHCR images are AMD64 only
 }
 
 variable "worker_server_type" {
   description = "Server type for worker nodes"
   type        = string
-  default     = "cax21" # 4 vCPU, 8GB RAM (ARM)
+  default     = "ccx23" # 4 dedicated vCPU, 16GB RAM (AMD64) - GHCR images are AMD64 only
 }
 
 variable "regions" {
   description = "Hetzner regions to deploy workers"
   type        = list(string)
-  default     = ["fsn1"] # Reduced for account with low IP quota
+  default     = ["hel1"] # fsn1 out of cpx capacity, using nbg1
 }
