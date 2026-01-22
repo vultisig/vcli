@@ -123,22 +123,17 @@ func runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVault
 		return fmt.Errorf("recipe validation failed: %w", err)
 	}
 
-	// Include default free billing entries (required by DCA plugin)
-	// Both "once" and "per-tx" types are needed to match plugin pricing
+	// Fetch plugin pricing to build matching billing entries
+	billing, err := fetchPluginBilling(pluginID)
+	if err != nil {
+		// If we can't fetch pricing, use empty billing (plugin may not have pricing)
+		billing = []map[string]any{}
+	}
+
+	// Build policy with recipe and billing
 	policy := map[string]any{
-		"recipe": recipe,
-		"billing": []map[string]any{
-			{
-				"type":   "once",
-				"amount": "0",
-				"asset":  "usdc",
-			},
-			{
-				"type":   "per-tx",
-				"amount": "0",
-				"asset":  "usdc",
-			},
-		},
+		"recipe":  recipe,
+		"billing": billing,
 	}
 
 	jsonBytes, err := json.MarshalIndent(policy, "", "  ")
@@ -233,4 +228,76 @@ func extractErrorMessage(body []byte) string {
 		return msg
 	}
 	return string(body)
+}
+
+// fetchPluginBilling fetches the plugin's pricing and converts it to billing entries.
+// The billing entries must match the plugin's pricing count for policy creation to succeed.
+// Uses uint64 for amount to match verifier's expected type.
+// Uses the public /plugins endpoint (no auth required) instead of /plugin/{id} (requires auth).
+func fetchPluginBilling(pluginID string) ([]map[string]any, error) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	resolvedID := ResolvePluginID(pluginID)
+
+	url := fmt.Sprintf("%s/plugins", cfg.Verifier)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch plugins: status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data struct {
+			Plugins []struct {
+				ID      string `json:"id"`
+				Pricing []struct {
+					Type      string  `json:"type"`
+					Frequency *string `json:"frequency"`
+					Amount    int64   `json:"amount"`
+					Asset     string  `json:"asset"`
+				} `json:"pricing"`
+			} `json:"plugins"`
+		} `json:"data"`
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	if err != nil {
+		return nil, err
+	}
+
+	var targetPricing []struct {
+		Type      string  `json:"type"`
+		Frequency *string `json:"frequency"`
+		Amount    int64   `json:"amount"`
+		Asset     string  `json:"asset"`
+	}
+	for _, p := range result.Data.Plugins {
+		if p.ID == resolvedID {
+			targetPricing = p.Pricing
+			break
+		}
+	}
+
+	var billing []map[string]any
+	for _, p := range targetPricing {
+		frequency := ""
+		if p.Frequency != nil {
+			frequency = *p.Frequency
+		}
+		entry := map[string]any{
+			"type":      p.Type,
+			"frequency": frequency,
+			"amount":    uint64(p.Amount),
+		}
+		billing = append(billing, entry)
+	}
+
+	return billing, nil
 }

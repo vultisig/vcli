@@ -41,6 +41,8 @@ spec:
               value: "8088"
             - name: TASK_QUEUE_NAME
               value: "dca_plugin_queue"
+            - name: SERVER_TASK_QUEUE_NAME
+              value: "dca_plugin_queue"
             - name: SERVER_HOST
               value: "0.0.0.0"
             - name: SERVER_PORT
@@ -156,6 +158,8 @@ spec:
             - name: METRICS_PORT
               value: "8089"
             - name: TASK_QUEUE_NAME
+              value: "dca_plugin_queue"
+            - name: SERVER_TASK_QUEUE_NAME
               value: "dca_plugin_queue"
             - name: SERVER_HOST
               value: "0.0.0.0"

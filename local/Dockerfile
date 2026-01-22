@@ -1,16 +1,17 @@
-# Build stage
-FROM golang:1.23-alpine AS builder
+# Build stage - use Debian for glibc compatibility with go-wrappers
+FROM golang:1.25-bookworm AS builder
 
-RUN apk add --no-cache git
+ARG TARGETARCH=amd64
+
+RUN apt-get update && apt-get install -y git build-essential && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
 # Copy go mod files
 COPY go.mod go.sum ./
 
-# Remove local replace directives for Docker build (use remote versions)
-RUN sed -i '/^replace/,/^)/d' go.mod && \
-    sed -i '/replace.*=>.*\.\.\//d' go.mod
+# Remove only local path replace directives (keep version fixes)
+RUN sed -i '/=> *\.\./d' go.mod
 
 # Download dependencies
 RUN go mod download
@@ -18,15 +19,22 @@ RUN go mod download
 # Copy source code
 COPY cmd/ cmd/
 
-# Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o vcli ./cmd/vcli
+# Build binary with CGO enabled for crypto libs
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=${TARGETARCH} go build -o vcli ./cmd/vcli
 
-# Runtime stage
-FROM alpine:3.19
+# Find and copy shared libraries (from includes/linux/ subdirectory)
+RUN mkdir -p /build/libs && \
+    find /go/pkg/mod/github.com/vultisig/go-wrappers*/includes/linux -name "*.so" -exec cp {} /build/libs/ \;
 
-RUN apk add --no-cache ca-certificates
+# Runtime stage - use Debian slim for glibc compatibility
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Copy shared libraries
+COPY --from=builder /build/libs/*.so /usr/lib/
 
 # Copy binary from builder
 COPY --from=builder /build/vcli /usr/local/bin/vcli

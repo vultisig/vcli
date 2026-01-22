@@ -17,10 +17,10 @@ patchesStrategicMerge:
 # Image configuration for production
 # Override base images with proper registry and tags
 images:
-  # DCA Plugin (app-recurring) v1.0.82
+  # DCA Plugin (app-recurring) - server v1.0.84 has TaskQueueName fix
   - name: docker.io/library/app-recurring-server:local-amd64
     newName: ghcr.io/vultisig/app-recurring/server
-    newTag: v1.0.82
+    newTag: v1.0.84
   - name: docker.io/library/app-recurring-worker:local-amd64
     newName: ghcr.io/vultisig/app-recurring/worker
     newTag: v1.0.82
@@ -40,10 +40,10 @@ images:
   - name: docker.io/library/vultisig-tx-indexer:local-amd64
     newName: ghcr.io/vultisig/verifier/tx_indexer
     newTag: v0.1.16
-  # VCLI v1.0.1 - fix: GetPluginServerURL reads env vars before defaults
+  # VCLI v1.0.3 - fix: billing fetch + shared libraries included in image
   - name: docker.io/library/vcli:local-amd64
     newName: ghcr.io/vultisig/vcli
-    newTag: v1.0.1
+    newTag: v1.0.3
 
 # Patch deployments for production GHCR images
 patches:
@@ -104,3 +104,25 @@ patches:
       kind: Deployment
       name: tx-indexer
       namespace: verifier
+  # Remove nodeSelector constraints from infra (allows any region)
+  - patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+    target:
+      kind: StatefulSet
+      name: postgres
+      namespace: infra
+  - patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+    target:
+      kind: StatefulSet
+      name: redis
+      namespace: infra
+  - patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+    target:
+      kind: StatefulSet
+      name: minio
+      namespace: infra
