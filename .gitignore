@@ -17,8 +17,13 @@ setup-env.sh
 
 # Local development
 local/vcli
+local/bin/vcli
 local/devctl
 logs/
+/vcli
+
+# Claude
+.claude/
 
 # Vault keyshare files (sensitive - never commit)
 local/keyshares/*
@@ -38,3 +43,5 @@ local/policies/*
 # IDE
 .idea/
 .vscode/
+local/bin/dca-worker
+local/bin/verifier

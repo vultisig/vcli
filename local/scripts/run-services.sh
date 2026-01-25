@@ -169,6 +169,19 @@ go run ./cmd/server > "$LOG_DIR/dca-server.log" 2>&1 &
 DCA_SERVER_PID=$!
 echo -e "  ${GREEN}✓${NC} DCA Server (PID: $DCA_SERVER_PID) → localhost:8082"
 
+echo -e "  ${YELLOW}⏳${NC} Waiting for DCA server migrations..."
+for i in {1..30}; do
+    if curl -s http://localhost:8082/health > /dev/null 2>&1; then
+        echo -e "  ${GREEN}✓${NC} DCA server ready"
+        break
+    fi
+    if grep -q "FATA" "$LOG_DIR/dca-server.log" 2>/dev/null; then
+        echo -e "  ${RED}✗${NC} DCA server failed to start. Check logs/dca-server.log"
+        exit 1
+    fi
+    sleep 1
+done
+
 echo -e "${CYAN}Starting DCA Worker...${NC}"
 export TASK_QUEUE_NAME="dca_plugin_queue"
 export VERIFIER_PARTYPREFIX="verifier"
@@ -195,11 +208,17 @@ export RPC_ZKSYNC_URL="https://mainnet.era.zksync.io"
 export RPC_CRONOS_URL="https://evm.cronos.org"
 export RPC_SOLANA_URL="https://api.mainnet-beta.solana.com"
 export RPC_BITCOIN_URL="https://mempool.space/api"
+export RPC_XRP_URL="https://s1.ripple.com:51234"
+export RPC_TRON_URL="https://api.trongrid.io"
+export DASH_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
+export ZEC_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
 export BTC_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
 export LTC_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
 export DOGE_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
+export BCH_BLOCKCHAIRURL="https://api.vultisig.com/blockchair"
 export SOLANA_JUPITERAPIURL="https://quote-api.jup.ag/v6"
 export RPC_THORCHAIN_URL="https://rpc.ninerealms.com"
+export RPC_COSMOS_URL="https://rest.cosmos.directory/cosmoshub"
 
 go run ./cmd/worker > "$LOG_DIR/dca-worker.log" 2>&1 &
 DCA_WORKER_PID=$!
@@ -232,6 +251,11 @@ export BASE_RPC_POLYGON_URL="https://polygon-bor-rpc.publicnode.com"
 export BASE_RPC_BITCOIN_URL="https://bitcoin-rpc.publicnode.com"
 export BASE_RPC_SOLANA_URL="https://solana-rpc.publicnode.com"
 export BASE_RPC_THORCHAIN_URL="https://thornode.ninerealms.com"
+export BASE_RPC_XRP_URL="https://s1.ripple.com:51234"
+export BASE_RPC_DASH_URL="https://api.vultisig.com/blockchair"
+export BASE_RPC_ZCASH_URL="https://api.vultisig.com/blockchair"
+export BASE_RPC_TRON_URL="https://api.trongrid.io"
+export BASE_RPC_MAYACHAIN_URL="https://mayanode.mayachain.info"
 
 go run ./cmd/tx_indexer > "$LOG_DIR/dca-tx-indexer.log" 2>&1 &
 DCA_TX_INDEXER_PID=$!

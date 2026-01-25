@@ -6,11 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
+	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -202,6 +201,36 @@ var AssetAliases = map[string]Asset{
 	"zec":   {Chain: "Zcash", Token: ""},
 	"dash":  {Chain: "Dash", Token: ""},
 	"atom":  {Chain: "Cosmos", Token: ""},
+	"cacao": {Chain: "MayaChain", Token: ""},
+	"xrp":   {Chain: "Ripple", Token: ""},
+	"trx":   {Chain: "Tron", Token: ""},
+	"kuji":  {Chain: "Kujira", Token: ""},
+	"base":  {Chain: "Base", Token: ""},
+
+	// TRON tokens (TRC20)
+	"usdt:tron": {Chain: "Tron", Token: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"},
+
+	// Avalanche tokens
+	"usdc:avalanche": {Chain: "Avalanche", Token: "0xB97EF9Ef8734C71904D8002F8B6Bc66Dd9c48a6E"},
+	"usdt:avalanche": {Chain: "Avalanche", Token: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7"},
+
+	// BSC tokens
+	"usdc:bsc": {Chain: "BSC", Token: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"},
+	"usdt:bsc": {Chain: "BSC", Token: "0x55d398326f99059fF775485246999027B3197955"},
+	"btcb":     {Chain: "BSC", Token: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c"},
+
+	// Base tokens
+	"usdc:base": {Chain: "Base", Token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"},
+
+	// Arbitrum assets (MayaChain supported)
+	"arb":           {Chain: "Arbitrum", Token: ""},
+	"arb-eth":       {Chain: "Arbitrum", Token: ""},
+	"arb-usdc":      {Chain: "Arbitrum", Token: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"},
+	"usdc:arbitrum": {Chain: "Arbitrum", Token: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"},
+	"arb-usdt":      {Chain: "Arbitrum", Token: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"},
+	"usdt:arbitrum": {Chain: "Arbitrum", Token: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"},
+	"arb-wbtc":      {Chain: "Arbitrum", Token: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f"},
+	"wbtc:arbitrum": {Chain: "Arbitrum", Token: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f"},
 
 	// Stablecoins (Ethereum mainnet)
 	"usdc": {Chain: "Ethereum", Token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"},
@@ -214,9 +243,39 @@ var AssetAliases = map[string]Asset{
 }
 
 // ResolveAsset converts an asset alias to its chain and token.
-// Supports formats: "eth", "usdc", "usdc:arbitrum"
+// Supports formats: "eth", "usdc", "usdc:arbitrum", "usdt:tron", "BASE.ETH", "BSC.USDT"
 func ResolveAsset(input string) Asset {
 	input = strings.ToLower(input)
+
+	// First check for exact match (handles "usdt:tron" style aliases)
+	if asset, ok := AssetAliases[input]; ok {
+		return asset
+	}
+
+	// Handle THORChain "CHAIN.TOKEN" format (e.g., "base.eth", "bsc.usdt", "base.usdc-0x833...")
+	if strings.Contains(input, ".") {
+		parts := strings.SplitN(input, ".", 2)
+		chainName := parts[0]
+		tokenPart := parts[1]
+
+		chain := capitalizeChain(chainName)
+
+		// Handle native token (e.g., "base.eth", "bsc.bnb", "avax.avax")
+		if isNativeToken(chainName, tokenPart) {
+			return Asset{Chain: chain, Token: ""}
+		}
+
+		// Handle token with address (e.g., "base.usdc-0x833589...")
+		if strings.Contains(tokenPart, "-0x") {
+			addrParts := strings.SplitN(tokenPart, "-", 2)
+			tokenAddr := addrParts[1]
+			return Asset{Chain: chain, Token: tokenAddr}
+		}
+
+		// Handle token symbol (e.g., "base.usdc", "bsc.usdt")
+		tokenAddr := resolveTokenOnChain(chain, tokenPart)
+		return Asset{Chain: chain, Token: tokenAddr}
+	}
 
 	// Handle "asset:chain" format (e.g., "usdc:arbitrum")
 	if strings.Contains(input, ":") {
@@ -235,17 +294,77 @@ func ResolveAsset(input string) Asset {
 		return baseAsset
 	}
 
-	// Direct alias lookup
-	if asset, ok := AssetAliases[input]; ok {
-		return asset
-	}
-
 	// Assume it's a token address on Ethereum
 	if strings.HasPrefix(input, "0x") {
 		return Asset{Chain: "Ethereum", Token: input}
 	}
 
 	return Asset{Chain: "Ethereum", Token: ""}
+}
+
+// isNativeToken checks if the token is the native token for the chain
+func isNativeToken(chain, token string) bool {
+	nativeTokens := map[string][]string{
+		"base":      {"eth"},
+		"arbitrum":  {"eth"},
+		"arb":       {"eth"},
+		"optimism":  {"eth"},
+		"op":        {"eth"},
+		"ethereum":  {"eth"},
+		"bsc":       {"bnb"},
+		"bnb":       {"bnb"},
+		"avalanche": {"avax"},
+		"avax":      {"avax"},
+		"polygon":   {"matic"},
+		"matic":     {"matic"},
+	}
+	tokens, ok := nativeTokens[chain]
+	if !ok {
+		return false
+	}
+	for _, t := range tokens {
+		if t == token {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveTokenOnChain resolves a token symbol to its address on a specific chain
+func resolveTokenOnChain(chain, token string) string {
+	// Known token addresses per chain (THORChain supported tokens)
+	tokenAddresses := map[string]map[string]string{
+		"Base": {
+			"usdc":  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+			"cbbtc": "0xcbB7C0000AB88B473b1f5aFd9ef808440eed33Bf",
+		},
+		"BSC": {
+			"usdc": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+			"usdt": "0x55d398326f99059fF775485246999027B3197955",
+			"btcb": "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c",
+		},
+		"Avalanche": {
+			"usdc": "0xB97EF9Ef8734C71904D8002F8B6Bc66Dd9c48a6E",
+			"usdt": "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7",
+		},
+		"Arbitrum": {
+			"usdc": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+			"usdt": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+			"wbtc": "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+		},
+		"Ethereum": {
+			"usdc": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+			"usdt": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+			"wbtc": "0x2260FAC5E5542A773Aa44fBCfeDf7C193bc2C599",
+		},
+	}
+
+	if chainTokens, ok := tokenAddresses[chain]; ok {
+		if addr, ok := chainTokens[token]; ok {
+			return addr
+		}
+	}
+	return ""
 }
 
 // capitalizeChain converts chain name to proper case
@@ -256,11 +375,27 @@ func capitalizeChain(chain string) string {
 		"solana":    "Solana",
 		"thorchain": "THORChain",
 		"arbitrum":  "Arbitrum",
+		"arb":       "Arbitrum",
 		"base":      "Base",
 		"optimism":  "Optimism",
+		"op":        "Optimism",
 		"bsc":       "BSC",
+		"bnb":       "BSC",
 		"avalanche": "Avalanche",
+		"avax":      "Avalanche",
 		"polygon":   "Polygon",
+		"matic":     "Polygon",
+		"tron":      "Tron",
+		"trx":       "Tron",
+		"ripple":    "Ripple",
+		"xrp":       "Ripple",
+		"mayachain": "MayaChain",
+		"maya":      "MayaChain",
+		"dash":      "Dash",
+		"zcash":     "Zcash",
+		"zec":       "Zcash",
+		"kujira":    "Kujira",
+		"kuji":      "Kujira",
 	}
 	if proper, ok := chainMap[strings.ToLower(chain)]; ok {
 		return proper
@@ -420,21 +555,57 @@ func GetVaultByName(name string) (*LocalVault, error) {
 }
 
 // ConvertToSmallestUnit converts a human-readable amount to the smallest unit
+// Uses big.Int arithmetic to avoid floating point precision errors
 func ConvertToSmallestUnit(amount string, asset Asset) string {
-	f, err := strconv.ParseFloat(amount, 64)
-	if err != nil {
+	decimals := getChainDecimals(asset)
+
+	// Split into integer and fractional parts
+	parts := strings.Split(amount, ".")
+	intPart := parts[0]
+	fracPart := ""
+	if len(parts) > 1 {
+		fracPart = parts[1]
+	}
+
+	// Pad or truncate fractional part to match decimals
+	if len(fracPart) < decimals {
+		fracPart = fracPart + strings.Repeat("0", decimals-len(fracPart))
+	} else if len(fracPart) > decimals {
+		fracPart = fracPart[:decimals]
+	}
+
+	// Combine integer and fractional parts
+	combined := intPart + fracPart
+
+	// Remove leading zeros but keep at least one digit
+	combined = strings.TrimLeft(combined, "0")
+	if combined == "" {
+		combined = "0"
+	}
+
+	// Validate it's a valid number
+	result := new(big.Int)
+	_, ok := result.SetString(combined, 10)
+	if !ok {
 		return amount
 	}
 
-	decimals := getChainDecimals(asset)
-
-	result := f * math.Pow(10, float64(decimals))
-	return fmt.Sprintf("%.0f", result)
+	return result.String()
 }
 
 func getChainDecimals(asset Asset) int {
-	// For ERC20 tokens, query the contract for decimals
+	// For tokens, determine decimals based on chain and token
 	if asset.Token != "" {
+		// Handle TRON TRC-20 tokens first (not EVM compatible)
+		if asset.Chain == "Tron" {
+			// TRON USDT uses 6 decimals
+			if strings.EqualFold(asset.Token, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t") {
+				return 6
+			}
+			return 6 // Most TRC-20 tokens use 6 decimals
+		}
+
+		// For ERC20 tokens, query the contract for decimals
 		decimals, err := queryERC20Decimals(asset.Chain, asset.Token)
 		if err == nil {
 			return decimals
@@ -455,7 +626,7 @@ func getChainDecimals(asset Asset) int {
 	switch asset.Chain {
 	case "Bitcoin", "Litecoin", "Bitcoin-Cash", "Dogecoin", "Zcash", "Dash", "THORChain":
 		return 8
-	case "Cosmos", "Osmosis", "Dydx", "Kujira", "MayaChain":
+	case "Cosmos", "Osmosis", "Dydx", "Kujira", "MayaChain", "Ripple", "Tron":
 		return 6
 	case "Solana":
 		return 9
