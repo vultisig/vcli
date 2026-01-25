@@ -1230,6 +1230,40 @@ var ethereumTokens = []TokenInfo{
 	{Symbol: "WETH", Address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", Decimals: 18},
 }
 
+// Avalanche C-Chain tokens
+var avalancheTokens = []TokenInfo{
+	{Symbol: "USDC", Address: "0xB97EF9Ef8734C71904D8002F8B6Bc66Dd9c48a6E", Decimals: 6},
+	{Symbol: "USDT", Address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", Decimals: 6},
+}
+
+// BSC tokens
+var bscTokens = []TokenInfo{
+	{Symbol: "USDC", Address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", Decimals: 18},
+	{Symbol: "USDT", Address: "0x55d398326f99059fF775485246999027B3197955", Decimals: 18},
+	{Symbol: "BTCB", Address: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c", Decimals: 18},
+}
+
+// Base tokens
+var baseTokens = []TokenInfo{
+	{Symbol: "USDC", Address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Decimals: 6},
+}
+
+// Arbitrum tokens
+var arbitrumTokens = []TokenInfo{
+	{Symbol: "USDC", Address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", Decimals: 6},
+	{Symbol: "USDT", Address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", Decimals: 6},
+	{Symbol: "WBTC", Address: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f", Decimals: 8},
+}
+
+// chainTokens maps chain to its token list
+var chainTokens = map[common.Chain][]TokenInfo{
+	common.Ethereum:  ethereumTokens,
+	common.Avalanche: avalancheTokens,
+	common.BscChain:  bscTokens,
+	common.Base:      baseTokens,
+	common.Arbitrum:  arbitrumTokens,
+}
+
 func newVaultDetailsCmd() *cobra.Command {
 	var chain string
 
@@ -1301,9 +1335,9 @@ func runVaultDetails(chainFilter string) error {
 				fmt.Printf("│ %-12s %s: %s\n", c.Name+":", c.Symbol, balanceFloat)
 			}
 
-			// Token balances for Ethereum mainnet
-			if c.Chain == common.Ethereum {
-				for _, token := range ethereumTokens {
+			// Token balances for this chain
+			if tokens, ok := chainTokens[c.Chain]; ok {
+				for _, token := range tokens {
 					tokenBalance, err := getERC20Balance(c.RPCURL, token.Address, evmAddr)
 					if err != nil {
 						continue
@@ -1396,55 +1430,128 @@ func runVaultDetails(chainFilter string) error {
 		}
 	}
 
-	// THORChain
-	if chainFilter == "" || strings.EqualFold(chainFilter, "thorchain") || strings.EqualFold(chainFilter, "rune") {
-		thorAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.THORChain)
+	// Dash
+	if chainFilter == "" || strings.EqualFold(chainFilter, "dash") {
+		dashAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.Dash)
 		if err == nil {
 			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
-			fmt.Printf("│ THORChain                                                       │\n")
+			fmt.Printf("│ Dash                                                            │\n")
 			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
-			fmt.Printf("│ Address: %s\n", thorAddr)
-			fmt.Printf("│ RUNE: (use explorer to check balance)\n")
+			fmt.Printf("│ Address: %s\n", dashAddr)
+			dashBal, balErr := getUTXOBalance("dash", dashAddr)
+			if balErr != nil {
+				fmt.Printf("│ DASH: error fetching balance\n")
+			} else {
+				fmt.Printf("│ DASH: %s\n", formatBalance(dashBal, 8))
+			}
 			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
 			fmt.Println()
 		}
 	}
 
-	// Maya
-	if chainFilter == "" || strings.EqualFold(chainFilter, "maya") || strings.EqualFold(chainFilter, "cacao") {
-		mayaAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.MayaChain)
+	// Zcash
+	if chainFilter == "" || strings.EqualFold(chainFilter, "zcash") || strings.EqualFold(chainFilter, "zec") {
+		zecAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.Zcash)
 		if err == nil {
 			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
-			fmt.Printf("│ MayaChain                                                       │\n")
+			fmt.Printf("│ Zcash                                                           │\n")
 			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
-			fmt.Printf("│ Address: %s\n", mayaAddr)
-			fmt.Printf("│ CACAO: (use explorer to check balance)\n")
+			fmt.Printf("│ Address: %s\n", zecAddr)
+			zecBal, balErr := getUTXOBalance("zcash", zecAddr)
+			if balErr != nil {
+				fmt.Printf("│ ZEC: error fetching balance\n")
+			} else {
+				fmt.Printf("│ ZEC: %s\n", formatBalance(zecBal, 8))
+			}
 			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
 			fmt.Println()
 		}
 	}
 
-	// Cosmos chains
-	cosmosChains := []struct {
-		name   string
-		chain  common.Chain
-		symbol string
+	// Ripple (XRP)
+	if chainFilter == "" || strings.EqualFold(chainFilter, "ripple") || strings.EqualFold(chainFilter, "xrp") {
+		xrpAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.XRP)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ Ripple                                                          │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", xrpAddr)
+			xrpBal, balErr := getXRPBalance(xrpAddr)
+			if balErr != nil {
+				fmt.Printf("│ XRP: error fetching balance\n")
+			} else {
+				fmt.Printf("│ XRP: %s\n", formatBalance(xrpBal, 6))
+			}
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// TRON
+	if chainFilter == "" || strings.EqualFold(chainFilter, "tron") || strings.EqualFold(chainFilter, "trx") {
+		tronAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.Tron)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ TRON                                                            │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", tronAddr)
+			tronBal, balErr := getTronBalance(tronAddr)
+			if balErr != nil {
+				fmt.Printf("│ TRX: error fetching balance\n")
+			} else {
+				fmt.Printf("│ TRX: %s\n", formatBalance(tronBal, 6))
+			}
+			// TRC20 USDT
+			usdtBal, balErr := getTRC20Balance(tronAddr, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t")
+			if balErr == nil && usdtBal.Cmp(big.NewInt(0)) > 0 {
+				fmt.Printf("│ USDT: %s\n", formatBalance(usdtBal, 6))
+			}
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// Cosmos SDK chains (THORChain, MayaChain, Cosmos Hub, etc.)
+	cosmosSdkChains := []struct {
+		name     string
+		chain    common.Chain
+		symbol   string
+		aliases  []string
+		restURL  string
+		denom    string
+		decimals int
 	}{
-		{"Cosmos Hub", common.GaiaChain, "ATOM"},
-		{"Osmosis", common.Osmosis, "OSMO"},
-		{"Dydx", common.Dydx, "DYDX"},
-		{"Kujira", common.Kujira, "KUJI"},
+		{"THORChain", common.THORChain, "RUNE", []string{"thorchain", "rune"}, "https://thornode.ninerealms.com", "rune", 8},
+		{"MayaChain", common.MayaChain, "CACAO", []string{"maya", "cacao"}, "https://mayanode.mayachain.info", "cacao", 10},
+		{"Cosmos Hub", common.GaiaChain, "ATOM", []string{"cosmos hub", "atom"}, "https://rest.cosmos.directory/cosmoshub", "uatom", 6},
+		{"Osmosis", common.Osmosis, "OSMO", []string{"osmosis", "osmo"}, "https://lcd.osmosis.zone", "uosmo", 6},
+		{"Dydx", common.Dydx, "DYDX", []string{"dydx"}, "https://rest.cosmos.directory/dydx", "adydx", 18},
+		{"Kujira", common.Kujira, "KUJI", []string{"kujira", "kuji"}, "https://rest.cosmos.directory/kujira", "ukuji", 6},
 	}
 
-	for _, cc := range cosmosChains {
-		if chainFilter == "" || strings.EqualFold(chainFilter, cc.name) || strings.EqualFold(chainFilter, cc.symbol) {
+	for _, cc := range cosmosSdkChains {
+		matchesFilter := chainFilter == ""
+		if !matchesFilter {
+			for _, alias := range cc.aliases {
+				if strings.EqualFold(chainFilter, alias) {
+					matchesFilter = true
+					break
+				}
+			}
+		}
+		if matchesFilter {
 			addr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, cc.chain)
 			if err == nil {
 				fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
 				fmt.Printf("│ %s\n", cc.name)
 				fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
 				fmt.Printf("│ Address: %s\n", addr)
-				fmt.Printf("│ %s: (use explorer to check balance)\n", cc.symbol)
+				balance, balErr := getCosmosBalance(cc.restURL, addr, cc.denom)
+				if balErr != nil {
+					fmt.Printf("│ %s: error fetching balance\n", cc.symbol)
+				} else {
+					fmt.Printf("│ %s: %s\n", cc.symbol, formatBalance(balance, cc.decimals))
+				}
 				fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
 				fmt.Println()
 			}
@@ -1646,5 +1753,202 @@ func getUTXOBalance(chain, addr string) (*big.Int, error) {
 		return big.NewInt(data.Address.Balance), nil
 	}
 
+	return big.NewInt(0), nil
+}
+
+func getXRPBalance(address string) (*big.Int, error) {
+	url := "https://s1.ripple.com:51234/"
+
+	payload := map[string]interface{}{
+		"method": "account_info",
+		"params": []map[string]interface{}{
+			{
+				"account":      address,
+				"ledger_index": "validated",
+			},
+		},
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(payloadBytes)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Result struct {
+			AccountData struct {
+				Balance string `json:"Balance"`
+			} `json:"account_data"`
+			Error string `json:"error"`
+		} `json:"result"`
+	}
+
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	if result.Result.Error != "" {
+		if result.Result.Error == "actNotFound" {
+			return big.NewInt(0), nil
+		}
+		return nil, fmt.Errorf("XRP RPC error: %s", result.Result.Error)
+	}
+
+	balance := new(big.Int)
+	balance.SetString(result.Result.AccountData.Balance, 10)
+	return balance, nil
+}
+
+func getTronBalance(address string) (*big.Int, error) {
+	url := fmt.Sprintf("https://api.trongrid.io/v1/accounts/%s", address)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Data []struct {
+			Balance int64 `json:"balance"`
+		} `json:"data"`
+		Success bool `json:"success"`
+	}
+
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	if !result.Success || len(result.Data) == 0 {
+		return big.NewInt(0), nil
+	}
+
+	return big.NewInt(result.Data[0].Balance), nil
+}
+
+func getTRC20Balance(address, tokenAddress string) (*big.Int, error) {
+	url := fmt.Sprintf("https://api.trongrid.io/v1/accounts/%s", address)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Data []struct {
+			TRC20 []map[string]string `json:"trc20"`
+		} `json:"data"`
+		Success bool `json:"success"`
+	}
+
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	if !result.Success || len(result.Data) == 0 {
+		return big.NewInt(0), nil
+	}
+
+	for _, tokenMap := range result.Data[0].TRC20 {
+		if balStr, ok := tokenMap[tokenAddress]; ok {
+			balance := new(big.Int)
+			balance.SetString(balStr, 10)
+			return balance, nil
+		}
+	}
+
+	return big.NewInt(0), nil
+}
+
+func getCosmosBalance(restURL, address, denom string) (*big.Int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	url := fmt.Sprintf("%s/cosmos/bank/v1beta1/balances/%s", restURL, address)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("cosmos balance request failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Balances []struct {
+			Denom  string `json:"denom"`
+			Amount string `json:"amount"`
+		} `json:"balances"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, b := range result.Balances {
+		if b.Denom == denom {
+			amount, ok := new(big.Int).SetString(b.Amount, 10)
+			if !ok {
+				return nil, fmt.Errorf("invalid amount: %s", b.Amount)
+			}
+			return amount, nil
+		}
+	}
 	return big.NewInt(0), nil
 }

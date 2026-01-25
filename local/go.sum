@@ -368,6 +368,8 @@ github.com/grpc-ecosystem/grpc-gateway v1.16.0 h1:gmcG1KaJ57LophUzW0Hy8NmPhnMZb4
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
 github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c h1:6rhixN/i8ZofjG1Y75iExal34USq5p+wiN1tpie8IrU=
 github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c/go.mod h1:NMPJylDgVpX0MLRlPy15sqSwOFv/U1GZ2m21JhFfek0=
+github.com/gtank/blake2 v0.1.1 h1:gH1q+hkkXvUC5Mmu/B+V2KNjsXZfdc2X1PAUE9oU50w=
+github.com/gtank/blake2 v0.1.1/go.mod h1:84L+tmDOofhAKi06/rbQ94KUHs4kA/JqiA8M/6LToXA=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
 github.com/hashicorp/errwrap v1.1.0 h1:OxrOeh75EUXMY8TBjag2fzXGZ40LB6IKw45YeGUDY2I=
 github.com/hashicorp/errwrap v1.1.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
@@ -728,14 +730,14 @@ github.com/vultisig/go-wrappers v0.0.0-20260116015747-e12e4d06cf57 h1:ZFlNC4JuaY
 github.com/vultisig/go-wrappers v0.0.0-20260116015747-e12e4d06cf57/go.mod h1:vEP0x0RmNlghWxfalt13FvVsBwmobSwimMhJxGfqCD4=
 github.com/vultisig/mobile-tss-lib v0.0.0-20250316003201-2e7e570a4a74 h1:goqwk4nQ/NEVIb3OPP9SUx7/u9ZfsUIcd5fIN/e4DVU=
 github.com/vultisig/mobile-tss-lib v0.0.0-20250316003201-2e7e570a4a74/go.mod h1:nOykk4nOy1L3yXtLSlYvVsgizBnCQ3tR2N5uwGPdvaM=
-github.com/vultisig/recipes v0.0.0-20260115094915-a341566fd1e4 h1:S2e9l7KJL1JXGEi4rOsOUeekJzCP6ZM3uEC9KMzmFB4=
-github.com/vultisig/recipes v0.0.0-20260115094915-a341566fd1e4/go.mod h1:Zv+2HR5FRbC/RXeBM4goKGCu70O2N2mJvAXUVuY/e8c=
+github.com/vultisig/recipes v0.0.0-20260120151228-f8985632c2e0 h1:AiJ2q7M/18pQn2YiaeClCwUtwoA8ZVDxIDp1lHZJBto=
+github.com/vultisig/recipes v0.0.0-20260120151228-f8985632c2e0/go.mod h1:PUz2BoPkuCrk9EFeWavynFSIMM2DNULfFeSS0CGVIVc=
 github.com/vultisig/verifier v0.0.0-20260116014220-9557a72dfce8 h1:L+pkn9pXg7XVVKPAB15e27hckZfrkr5PHqHAkciFErI=
 github.com/vultisig/verifier v0.0.0-20260116014220-9557a72dfce8/go.mod h1:1batQ0l2I5E/hsRf2UyO19sxHkyou1DaZeaa3iwf2Xc=
 github.com/vultisig/vultiserver v0.0.0-20250825042420-c6e6ac281110 h1:7WDQ92FAdu08Byjgm3RNS8Sok49sK521PzPcbRpbzCE=
 github.com/vultisig/vultiserver v0.0.0-20250825042420-c6e6ac281110/go.mod h1:HwP2IgW6Mcu/gX8paFuKvfibrGE9UmPgkOFTub6dskM=
-github.com/vultisig/vultisig-go v0.0.0-20260114092710-6c38516a0c85 h1:NAVXp2Mm791Z/teQHUA8T7mhmx3bouyrXvQkLXvAu3M=
-github.com/vultisig/vultisig-go v0.0.0-20260114092710-6c38516a0c85/go.mod h1:jOf+2n1Eo/XZjiUbHjTfraPMw4HAZZ0Sw9Z6+vpQrU4=
+github.com/vultisig/vultisig-go v0.0.0-20260124100803-5ee9e9f8e9d5 h1:6q3ARooyc+m9fZCBSHyPAZCZV/OQHuw2fLdknuXxwus=
+github.com/vultisig/vultisig-go v0.0.0-20260124100803-5ee9e9f8e9d5/go.mod h1:jOf+2n1Eo/XZjiUbHjTfraPMw4HAZZ0Sw9Z6+vpQrU4=
 github.com/xdg-go/pbkdf2 v1.0.0/go.mod h1:jrpuAogTd400dnrH08LKmI/xc1MbPOebTwRqcT5RDeI=
 github.com/xdg-go/scram v1.1.2/go.mod h1:RT/sEzTbU5y00aCK8UOx6R7YryM0iF1N2MOmC3kKLN4=
 github.com/xdg-go/stringprep v1.0.4/go.mod h1:mPGuuIYwz7CmR2bT9j4GbQqutWS1zV24gijq1dTyGkM=

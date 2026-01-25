@@ -10,10 +10,10 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/vultisig/commondata v0.0.0-20251125054425-71e1e8231dd3
-	github.com/vultisig/recipes v0.0.0-20260115094915-a341566fd1e4
+	github.com/vultisig/recipes v0.0.0-20260120151228-f8985632c2e0
 	github.com/vultisig/verifier v0.0.0-20260116014220-9557a72dfce8
 	github.com/vultisig/vultiserver v0.0.0-20250825042420-c6e6ac281110
-	github.com/vultisig/vultisig-go v0.0.0-20260114092710-6c38516a0c85
+	github.com/vultisig/vultisig-go v0.0.0-20260124100803-5ee9e9f8e9d5
 	golang.org/x/term v0.34.0
 	google.golang.org/protobuf v1.36.8
 	gopkg.in/yaml.v3 v3.0.1
@@ -107,6 +107,7 @@ require (
 	github.com/google/flatbuffers v23.5.26+incompatible // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/gtank/blake2 v0.1.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-metrics v0.5.4 // indirect

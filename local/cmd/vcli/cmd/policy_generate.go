@@ -14,7 +14,7 @@ import (
 )
 
 func newPolicyGenerateCmd() *cobra.Command {
-	var pluginID, from, to, amount, frequency, vaultName, toVaultName, output string
+	var pluginID, from, to, amount, frequency, vaultName, toVaultName, output, routePreference string
 
 	cmd := &cobra.Command{
 		Use:   "generate",
@@ -25,9 +25,15 @@ Asset shortcuts:
   eth, btc, sol, rune, bnb, avax, matic  - Native tokens
   usdc, usdt, dai                        - Stablecoins (Ethereum)
   usdc:arbitrum                          - Specify chain explicitly
+  arb, arb-usdc, arb-usdt, arb-wbtc      - Arbitrum assets (MayaChain)
 
 Frequency options:
   one-time, minutely, hourly, daily, weekly, bi-weekly, monthly
+
+Route preference (for cross-chain swaps):
+  auto      - Default priority: THORChain → MayaChain → 1inch
+  thorchain - Use THORChain only
+  mayachain - Prefer MayaChain, fallback to THORChain
 
 Vault selection:
   --vault       Source vault (default: first imported vault)
@@ -40,6 +46,9 @@ Examples:
   # Swap with explicit vault
   vcli policy generate --from eth --to usdc --amount 0.01 --vault FastPlugin1
 
+  # Swap ETH to ZEC using MayaChain
+  vcli policy generate --from eth --to zec --amount 0.01 --route mayachain
+
   # Send ETH from Plugin1 to Plugin2
   vcli policy generate --from eth --to eth --amount 0.1 --vault Plugin1 --to-vault Plugin2
 
@@ -47,7 +56,7 @@ Examples:
   vcli policy generate --from eth --to usdc --amount 0.01 --output swap.json
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVaultName, output)
+			return runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVaultName, output, routePreference)
 		},
 	}
 
@@ -59,6 +68,7 @@ Examples:
 	cmd.Flags().StringVar(&vaultName, "vault", "", "Source vault name (default: first vault)")
 	cmd.Flags().StringVar(&toVaultName, "to-vault", "", "Destination vault name for sends (default: same as --vault)")
 	cmd.Flags().StringVar(&output, "output", "", "Output file (default: stdout)")
+	cmd.Flags().StringVar(&routePreference, "route", "auto", "Route preference: auto, thorchain, mayachain")
 
 	cmd.MarkFlagRequired("from")
 	cmd.MarkFlagRequired("to")
@@ -67,7 +77,7 @@ Examples:
 	return cmd
 }
 
-func runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVaultName, output string) error {
+func runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVaultName, output, routePreference string) error {
 	// Load source vault
 	fromVault, err := GetVaultByName(vaultName)
 	if err != nil {
@@ -115,6 +125,10 @@ func runPolicyGenerate(pluginID, from, to, amount, frequency, vaultName, toVault
 		},
 		"fromAmount": amountSmallest,
 		"frequency":  frequency,
+	}
+
+	if routePreference != "" && routePreference != "auto" {
+		recipe["routePreference"] = routePreference
 	}
 
 	// Validate recipe with plugin server
