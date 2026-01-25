@@ -6,11 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
+	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -556,16 +555,42 @@ func GetVaultByName(name string) (*LocalVault, error) {
 }
 
 // ConvertToSmallestUnit converts a human-readable amount to the smallest unit
+// Uses big.Int arithmetic to avoid floating point precision errors
 func ConvertToSmallestUnit(amount string, asset Asset) string {
-	f, err := strconv.ParseFloat(amount, 64)
-	if err != nil {
+	decimals := getChainDecimals(asset)
+
+	// Split into integer and fractional parts
+	parts := strings.Split(amount, ".")
+	intPart := parts[0]
+	fracPart := ""
+	if len(parts) > 1 {
+		fracPart = parts[1]
+	}
+
+	// Pad or truncate fractional part to match decimals
+	if len(fracPart) < decimals {
+		fracPart = fracPart + strings.Repeat("0", decimals-len(fracPart))
+	} else if len(fracPart) > decimals {
+		fracPart = fracPart[:decimals]
+	}
+
+	// Combine integer and fractional parts
+	combined := intPart + fracPart
+
+	// Remove leading zeros but keep at least one digit
+	combined = strings.TrimLeft(combined, "0")
+	if combined == "" {
+		combined = "0"
+	}
+
+	// Validate it's a valid number
+	result := new(big.Int)
+	_, ok := result.SetString(combined, 10)
+	if !ok {
 		return amount
 	}
 
-	decimals := getChainDecimals(asset)
-
-	result := f * math.Pow(10, float64(decimals))
-	return fmt.Sprintf("%.0f", result)
+	return result.String()
 }
 
 func getChainDecimals(asset Asset) int {
