@@ -6,7 +6,7 @@
 # Prerequisites:
 # - Docker running with postgres, redis, minio (via docker-compose.yaml)
 # - Go installed
-# - Sibling repos: ../verifier, ../app-recurring
+# - Sibling repos: ../verifier, ../app-recurring, ../agent-backend
 
 set -e
 
@@ -43,6 +43,10 @@ if [ ! -d "$ROOT_DIR/app-recurring" ]; then
     exit 1
 fi
 
+if [ ! -d "$ROOT_DIR/agent-backend" ]; then
+    echo -e "${YELLOW}WARNING: agent-backend repo not found at $ROOT_DIR/agent-backend — skipping${NC}"
+fi
+
 # Create logs directory
 LOG_DIR="$VCLI_DIR/logs"
 mkdir -p "$LOG_DIR"
@@ -76,6 +80,8 @@ pkill -9 -f "go run.*cmd/worker" 2>/dev/null || true
 pkill -9 -f "go run.*cmd/server" 2>/dev/null || true
 pkill -9 -f "go run.*cmd/scheduler" 2>/dev/null || true
 pkill -9 -f "go run.*cmd/tx_indexer" 2>/dev/null || true
+pkill -9 -f "go run.*agent-backend.*cmd/server" 2>/dev/null || true
+pkill -9 -f "agent-backend-server" 2>/dev/null || true
 # Also kill compiled binaries in go-build cache
 pkill -9 -f "go-build.*/verifier$" 2>/dev/null || true
 pkill -9 -f "go-build.*/worker$" 2>/dev/null || true
@@ -116,6 +122,12 @@ export ENCRYPTION_SECRET="dev-encryption-secret-32b"
 export METRICS_ENABLED="true"
 export METRICS_HOST="0.0.0.0"
 export METRICS_PORT="8088"
+export PLUGIN_ASSETS_HOST="http://localhost:9000"
+export PLUGIN_ASSETS_REGION="us-east-1"
+export PLUGIN_ASSETS_BUCKET="vultisig-plugin-assets"
+export PLUGIN_ASSETS_ACCESS_KEY="minioadmin"
+export PLUGIN_ASSETS_SECRET="minioadmin"
+export PLUGIN_ASSETS_PUBLIC_BASE_URL="http://localhost:9000/vultisig-plugin-assets"
 
 go run ./cmd/verifier > "$LOG_DIR/verifier.log" 2>&1 &
 VERIFIER_PID=$!
@@ -268,6 +280,124 @@ DCA_TX_INDEXER_PID=$!
 echo -e "  ${GREEN}✓${NC} DCA TX Indexer (PID: $DCA_TX_INDEXER_PID)"
 
 # ============================================
+# APP-RECURRING (SENDS) SERVICES
+# ============================================
+
+echo -e "${CYAN}Starting Sends Plugin Server...${NC}"
+cd "$ROOT_DIR/app-recurring"
+
+# Sends environment
+export MODE="send"
+export SERVER_PORT="8083"
+export SERVER_HOST="0.0.0.0"
+export TASK_QUEUE_NAME="sends_plugin_queue"
+export SERVER_ENCRYPTIONSECRET="dev-encryption-secret-32b"
+export POSTGRES_DSN="postgres://vultisig:vultisig@localhost:5432/vultisig-sends?sslmode=disable"
+export REDIS_URI="redis://:vultisig@localhost:6379"
+export BLOCKSTORAGE_HOST="http://localhost:9000"
+export BLOCKSTORAGE_REGION="us-east-1"
+export BLOCKSTORAGE_ACCESSKEY="minioadmin"
+export BLOCKSTORAGE_SECRETKEY="minioadmin"
+export BLOCKSTORAGE_BUCKET="vultisig-sends"
+export VERIFIER_URL="http://localhost:8080"
+export METRICS_ENABLED="true"
+export METRICS_HOST="0.0.0.0"
+export METRICS_PORT="8191"
+
+go run ./cmd/server > "$LOG_DIR/sends-server.log" 2>&1 &
+SENDS_SERVER_PID=$!
+echo -e "  ${GREEN}✓${NC} Sends Server (PID: $SENDS_SERVER_PID) → localhost:8083"
+
+echo -e "  ${YELLOW}⏳${NC} Waiting for Sends server migrations..."
+for i in {1..30}; do
+    if curl -s http://localhost:8083/health > /dev/null 2>&1; then
+        echo -e "  ${GREEN}✓${NC} Sends server ready"
+        break
+    fi
+    if grep -q "FATA" "$LOG_DIR/sends-server.log" 2>/dev/null; then
+        echo -e "  ${RED}✗${NC} Sends server failed to start. Check logs/sends-server.log"
+        exit 1
+    fi
+    sleep 1
+done
+
+echo -e "${CYAN}Starting Sends Worker...${NC}"
+export TASK_QUEUE_NAME="sends_plugin_queue"
+export VERIFIER_PARTYPREFIX="verifier"
+export VERIFIER_SENDTOKEN="local-dev-send-apikey"
+export VERIFIER_SWAPTOKEN="local-dev-send-apikey"
+export VAULTSERVICE_LOCALPARTYPREFIX="sends-worker"
+export VAULTSERVICE_RELAY_SERVER="https://api.vultisig.com/router"
+export VAULTSERVICE_ENCRYPTIONSECRET="dev-encryption-secret-32b"
+export VAULTSERVICE_DOSETUPMSG="true"
+export METRICS_PORT="8193"
+
+go run ./cmd/worker > "$LOG_DIR/sends-worker.log" 2>&1 &
+SENDS_WORKER_PID=$!
+echo -e "  ${GREEN}✓${NC} Sends Worker (PID: $SENDS_WORKER_PID)"
+
+echo -e "${CYAN}Starting Sends Scheduler...${NC}"
+export HEALTHPORT="8194"
+export METRICS_PORT="8195"
+
+go run ./cmd/scheduler > "$LOG_DIR/sends-scheduler.log" 2>&1 &
+SENDS_SCHEDULER_PID=$!
+echo -e "  ${GREEN}✓${NC} Sends Scheduler (PID: $SENDS_SCHEDULER_PID)"
+
+echo -e "${CYAN}Starting Sends TX Indexer...${NC}"
+export HEALTHPORT="8196"
+export METRICS_PORT="8197"
+export BASE_DATABASE_DSN="postgres://vultisig:vultisig@localhost:5432/vultisig-sends?sslmode=disable"
+
+go run ./cmd/tx_indexer > "$LOG_DIR/sends-tx-indexer.log" 2>&1 &
+SENDS_TX_INDEXER_PID=$!
+echo -e "  ${GREEN}✓${NC} Sends TX Indexer (PID: $SENDS_TX_INDEXER_PID)"
+
+# ============================================
+# AGENT BACKEND
+# ============================================
+
+if [ -d "$ROOT_DIR/agent-backend" ]; then
+    echo -e "${CYAN}Starting Agent Backend...${NC}"
+    cd "$ROOT_DIR/agent-backend"
+
+    # Source .env file for ANTHROPIC_API_KEY and other secrets
+    if [ -f "$ROOT_DIR/agent-backend/.env" ]; then
+        set -a
+        source "$ROOT_DIR/agent-backend/.env"
+        set +a
+    fi
+
+    # Override infra to use shared vcli services
+    export SERVER_HOST="0.0.0.0"
+    export SERVER_PORT="8084"
+    export DATABASE_DSN="postgres://vultisig:vultisig@localhost:5432/vultisig-agent?sslmode=disable"
+    export REDIS_URI="redis://:vultisig@localhost:6379"
+    export VERIFIER_URL="http://localhost:8080"
+    export LOG_FORMAT="text"
+
+    go build -o /tmp/agent-backend-server ./cmd/server
+    /tmp/agent-backend-server > "$LOG_DIR/agent-backend.log" 2>&1 &
+    AGENT_BACKEND_PID=$!
+    echo -e "  ${GREEN}✓${NC} Agent Backend (PID: $AGENT_BACKEND_PID) → localhost:8084"
+
+    echo -e "  ${YELLOW}⏳${NC} Waiting for Agent Backend..."
+    for i in {1..30}; do
+        if curl -s http://localhost:8084/healthz > /dev/null 2>&1; then
+            echo -e "  ${GREEN}✓${NC} Agent Backend ready"
+            break
+        fi
+        if grep -q "Fatal\|fatal\|FATA" "$LOG_DIR/agent-backend.log" 2>/dev/null; then
+            echo -e "  ${RED}✗${NC} Agent Backend failed to start. Check logs/agent-backend.log"
+            break
+        fi
+        sleep 1
+    done
+else
+    echo -e "${YELLOW}Skipping Agent Backend (repo not found)${NC}"
+fi
+
+# ============================================
 # SEED DATABASE
 # ============================================
 
@@ -298,6 +428,13 @@ echo -e "    DCA Plugin API       localhost:8082"
 echo -e "    DCA Plugin Worker    (background)"
 echo -e "    DCA Scheduler        (background)"
 echo -e "    DCA TX Indexer       (background)"
+echo -e "    Sends Plugin API     localhost:8083"
+echo -e "    Sends Plugin Worker  (background)"
+echo -e "    Sends Scheduler      (background)"
+echo -e "    Sends TX Indexer     (background)"
+if [ -d "$ROOT_DIR/agent-backend" ]; then
+echo -e "    Agent Backend API    localhost:8084"
+fi
 echo ""
 echo -e "  ${CYAN}Infrastructure (Docker):${NC}"
 echo -e "    PostgreSQL           localhost:5432"
@@ -307,11 +444,13 @@ echo ""
 echo -e "  ${CYAN}Logs:${NC}"
 echo -e "    tail -f $LOG_DIR/verifier.log"
 echo -e "    tail -f $LOG_DIR/dca-server.log"
+echo -e "    tail -f $LOG_DIR/sends-server.log"
+echo -e "    tail -f $LOG_DIR/agent-backend.log"
 echo -e "    (or any file in $LOG_DIR/)"
 echo ""
 echo -e "  ${CYAN}Stop:${NC} make stop"
 echo ""
-echo -e "${GREEN}Edit code in ../verifier or ../app-recurring, then restart with 'make start'${NC}"
+echo -e "${GREEN}Edit code in ../verifier, ../app-recurring, or ../agent-backend, then restart with 'make start'${NC}"
 echo ""
 
 # Save PIDs for later cleanup
@@ -321,3 +460,10 @@ echo "$DCA_SERVER_PID" > "$LOG_DIR/dca-server.pid"
 echo "$DCA_WORKER_PID" > "$LOG_DIR/dca-worker.pid"
 echo "$DCA_SCHEDULER_PID" > "$LOG_DIR/dca-scheduler.pid"
 echo "$DCA_TX_INDEXER_PID" > "$LOG_DIR/dca-tx-indexer.pid"
+echo "$SENDS_SERVER_PID" > "$LOG_DIR/sends-server.pid"
+echo "$SENDS_WORKER_PID" > "$LOG_DIR/sends-worker.pid"
+echo "$SENDS_SCHEDULER_PID" > "$LOG_DIR/sends-scheduler.pid"
+echo "$SENDS_TX_INDEXER_PID" > "$LOG_DIR/sends-tx-indexer.pid"
+if [ -n "${AGENT_BACKEND_PID:-}" ]; then
+    echo "$AGENT_BACKEND_PID" > "$LOG_DIR/agent-backend.pid"
+fi

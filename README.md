@@ -11,6 +11,7 @@ The Vultisig stack is tightly coupled:
 - **vcli** depends on verifier (TSS protocols)
 - **verifier** depends on recipes (chain abstraction)
 - **app-recurring** depends on recipes + verifier (policy execution)
+- **agent-backend** depends on verifier (plugin specs, policy suggestions)
 - All depend on **go-wrappers** (cryptographic primitives)
 
 Changes in one repo often require changes in others. Docker images create version drift - the local vcli binary may be incompatible with pre-built Docker images due to protocol or signature changes.
@@ -39,6 +40,7 @@ mkdir vultisig && cd vultisig
 git clone https://github.com/vultisig/vcli.git
 git clone https://github.com/vultisig/verifier.git
 git clone https://github.com/vultisig/app-recurring.git
+git clone https://github.com/vultisig/agent-backend.git
 git clone https://github.com/vultisig/recipes.git
 git clone https://github.com/vultisig/go-wrappers.git
 ```
@@ -46,11 +48,12 @@ git clone https://github.com/vultisig/go-wrappers.git
 Directory structure:
 ```
 vultisig/
-├── vcli/           # This tool
-├── verifier/       # Policy verification + TSS
-├── app-recurring/  # DCA plugin
-├── recipes/        # Chain abstraction layer
-└── go-wrappers/    # Rust crypto (auto-downloaded, but useful to have)
+├── vcli/            # This tool
+├── verifier/        # Policy verification + TSS
+├── app-recurring/   # DCA + Sends plugins
+├── agent-backend/   # AI agent backend (optional)
+├── recipes/         # Chain abstraction layer
+└── go-wrappers/     # Rust crypto (auto-downloaded, but useful to have)
 ```
 
 ---
@@ -76,7 +79,8 @@ make start    # Starts postgres/redis/minio in Docker, services run natively
 `make start`:
 1. Starts infrastructure in Docker (postgres, redis, minio)
 2. Runs verifier (API + worker) natively with `go run`
-3. Runs app-recurring (server + worker + scheduler) natively with `go run`
+3. Runs app-recurring (DCA + Sends: server + worker + scheduler) natively with `go run`
+4. Runs agent-backend natively with `go run` (if repo present)
 
 Logs: `tail -f local/logs/*.log`
 
@@ -149,7 +153,7 @@ make start
 
 This starts:
 - Infrastructure in Docker: PostgreSQL, Redis, MinIO
-- Services natively: Verifier API/worker, DCA plugin server/worker/scheduler
+- Services natively: Verifier API/worker, DCA plugin server/worker/scheduler, Sends plugin server/worker/scheduler, Agent Backend
 
 **Validation:**
 ```bash
@@ -437,6 +441,14 @@ make status
 ## vcli Commands Reference
 
 ```bash
+# Use production verifier/plugin endpoints for any command
+./local/vcli.sh --prod <command> [flags]
+
+# Examples
+./local/vcli.sh --prod status
+./local/vcli.sh --prod plugin list
+./local/vcli.sh --prod policy generate --from eth --to usdc --amount 0.01 --output $(pwd)/local/policies/prod-policy.json
+
 # Vault management (put .vult file in local/keyshares/ first)
 ./local/vcli.sh vault import --password "password"
 ./local/vcli.sh vault list
@@ -461,6 +473,12 @@ make status
 ./local/vcli.sh status
 ```
 
+When `--prod` is set, vcli uses:
+- Verifier: `https://verifier.vultisig.com`
+- DCA (Recurring Swaps): `https://plugin-dca-swap.prod.plugins.vultisig.com`
+- Fees: `https://plugin-fees.prod.plugins.vultisig.com`
+- Recurring Sends: `https://plugin-dca-send.prod.plugins.vultisig.com`
+
 ## Services & Ports
 
 | Service | Port | Notes |
@@ -475,6 +493,24 @@ make status
 | DCA Worker | - | Native (go run) |
 | DCA Scheduler | - | Native (go run) |
 | DCA TX Indexer | - | Native (go run) |
+| Sends Server | 8083 | Native (go run) |
+| Sends Worker | - | Native (go run) |
+| Sends Scheduler | - | Native (go run) |
+| Sends TX Indexer | - | Native (go run) |
+| Agent Backend | 8084 | Native (go run), optional |
+
+## Agent Backend Setup
+
+The agent-backend requires an `ANTHROPIC_API_KEY` in its `.env` file. If present, `make start` sources `../agent-backend/.env` and runs it automatically against the shared infrastructure.
+
+```bash
+# One-time: copy and fill in your API key
+cd ../agent-backend
+cp .env.example .env
+# Edit .env and set ANTHROPIC_API_KEY
+```
+
+If the `agent-backend/` repo is not present, `make start` skips it with a warning.
 
 ## Queue Isolation (4-Party TSS)
 
@@ -515,12 +551,13 @@ vcli/
 └── README.md
 ```
 
-**Sibling repos (required):**
+**Sibling repos:**
 ```
 vultisig/
 ├── vcli/
-├── verifier/
-├── app-recurring/
+├── verifier/        # Required
+├── app-recurring/   # Required
+├── agent-backend/   # Optional (skipped if missing)
 ├── recipes/
 └── go-wrappers/
 ```
@@ -572,6 +609,8 @@ tail -f local/logs/worker.log        # Verifier worker
 tail -f local/logs/dca-server.log    # DCA plugin server
 tail -f local/logs/dca-worker.log    # DCA plugin worker
 tail -f local/logs/dca-scheduler.log # DCA scheduler
+tail -f local/logs/sends-server.log  # Sends plugin server
+tail -f local/logs/agent-backend.log # Agent backend
 
 # View all logs
 tail -f local/logs/*.log
