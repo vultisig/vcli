@@ -8,7 +8,7 @@ data:
     -- Seed plugins for Kubernetes deployment
     -- Uses cluster-internal service endpoints
 
-    INSERT INTO plugins (id, title, description, server_endpoint, category, logo_url, thumbnail_url, images, features, faqs, audited, created_at, updated_at)
+    INSERT INTO plugins (id, title, description, server_endpoint, category, features, faqs, audited, created_at, updated_at)
     VALUES
     (
         'vultisig-fees-feee',
@@ -16,9 +16,6 @@ data:
         'Automatic fee collection for Vultisig transactions',
         'http://server.plugin-fee.svc.cluster.local:8085',
         'plugin',
-        'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/fees/icon.jpg',
-        'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/fees/thumbnail.jpg',
-        '[]',
         '["Automatic fee deduction", "Multi-chain support", "Transparent pricing"]',
         '[]',
         false,
@@ -31,9 +28,6 @@ data:
         'Automated recurring swaps and transfers',
         'http://server-swap.plugin-dca.svc.cluster.local:8082',
         'app',
-        'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/dca/icon.jpg',
-        'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/dca/thumbnail.jpg',
-        '[]',
         '["Recurring swaps", "Multi-chain support", "Flexible scheduling"]',
         '[]',
         false,
@@ -46,10 +40,19 @@ data:
         'Automated recurring token transfers',
         'http://server-send.plugin-dca.svc.cluster.local:8083',
         'app',
-        'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/recurring-sends/icon.jpg',
-        'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/recurring-sends/thumbnail.jpg',
-        '[]',
         '["Scheduled transfers", "Multi-chain support", "Reliable execution"]',
+        '[]',
+        false,
+        NOW(),
+        NOW()
+    ),
+    (
+        'vultisig-developer-0000',
+        'Developer (Listing Fee)',
+        'Plugin listing fee payment service',
+        'http://server.plugin-developer.svc.cluster.local',
+        'app',
+        '[]',
         '[]',
         false,
         NOW(),
@@ -60,12 +63,13 @@ data:
         category = EXCLUDED.category,
         updated_at = NOW();
 
-    -- Seed plugin API keys (must match secrets in plugin-dca namespace)
+    -- Seed plugin API keys
     INSERT INTO plugin_apikey (plugin_id, apikey, status)
     VALUES
         ('vultisig-fees-feee', 'k8s-fee-plugin-apikey', 1),
         ('vultisig-dca-0000', 'k8s-dca-swap-apikey', 1),
-        ('vultisig-recurring-sends-0000', 'k8s-dca-send-apikey', 1)
+        ('vultisig-recurring-sends-0000', 'k8s-dca-send-apikey', 1),
+        ('vultisig-developer-0000', 'k8s-developer-apikey', 1)
     ON CONFLICT (apikey) DO NOTHING;
 ---
 apiVersion: batch/v1
