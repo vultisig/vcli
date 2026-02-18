@@ -12,14 +12,13 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	"github.com/vultisig/vultiserver/relay"
 	vgcommon "github.com/vultisig/vultisig-go/common"
 	vgrelay "github.com/vultisig/vultisig-go/relay"
-	"github.com/vultisig/vultiserver/relay"
 
 	"github.com/vultisig/verifier/vault"
 	"github.com/vultisig/verifier/vault_config"
@@ -91,7 +90,7 @@ func (t *TSSService) KeysignWithFastVault(ctx context.Context, v *LocalVault, me
 	for i, msg := range messages {
 		t.logger.WithField("message_index", i).Info("Running DKLS keysign protocol...")
 
-		result, err := t.runKeysignAsInitiator(mpcWrapper, v, sessionID, hexEncryptionKey, parties, msg, derivePath, i)
+		result, err := t.runKeysignAsInitiator(ctx, mpcWrapper, v, sessionID, hexEncryptionKey, parties, msg, derivePath, i)
 		if err != nil {
 			return nil, fmt.Errorf("keysign message %d failed: %w", i, err)
 		}
@@ -115,6 +114,7 @@ func (t *TSSService) requestFastVaultKeysignDKLS(ctx context.Context, v *LocalVa
 		HexEncryptionKey string   `json:"hex_encryption_key"`
 		DerivePath       string   `json:"derive_path"`
 		IsECDSA          bool     `json:"is_ecdsa"`
+		DoSetupMsg       bool     `json:"do_setup_msg"`
 		VaultPassword    string   `json:"vault_password"`
 	}
 
@@ -125,6 +125,7 @@ func (t *TSSService) requestFastVaultKeysignDKLS(ctx context.Context, v *LocalVa
 		HexEncryptionKey: hexEncKey,
 		DerivePath:       derivePath,
 		IsECDSA:          true,
+		DoSetupMsg:       false,
 		VaultPassword:    vaultPassword,
 	}
 
@@ -156,7 +157,7 @@ func (t *TSSService) requestFastVaultKeysignDKLS(ctx context.Context, v *LocalVa
 	return nil
 }
 
-func (t *TSSService) runKeysignAsInitiator(mpcWrapper *vault.MPCWrapperImp, v *LocalVault, sessionID, hexEncryptionKey string, parties []string, message, derivePath string, msgIndex int) (*KeysignResult, error) {
+func (t *TSSService) runKeysignAsInitiator(ctx context.Context, mpcWrapper *vault.MPCWrapperImp, v *LocalVault, sessionID, hexEncryptionKey string, parties []string, message, derivePath string, msgIndex int) (*KeysignResult, error) {
 	relayClient := vgrelay.NewRelayClient(RelayServer)
 
 	publicKey := v.PublicKeyECDSA
@@ -234,7 +235,7 @@ func (t *TSSService) runKeysignAsInitiator(mpcWrapper *vault.MPCWrapperImp, v *L
 		return nil, fmt.Errorf("create session from setup: %w", err)
 	}
 
-	return t.processKeysignProtocol(mpcWrapper, sessionHandle, sessionID, hexEncryptionKey, parties, messageID)
+	return t.processKeysignProtocol(ctx, mpcWrapper, sessionHandle, sessionID, hexEncryptionKey, parties, messageID)
 }
 
 func fmtDerivePath(path string) []byte {
@@ -248,41 +249,24 @@ func fmtIdsSlice(ids []string) []byte {
 	return []byte(strings.Join(ids, "\x00"))
 }
 
-func (t *TSSService) processKeysignProtocol(mpcWrapper *vault.MPCWrapperImp, sessionHandle vault.Handle, sessionID, hexEncryptionKey string, parties []string, messageID string) (*KeysignResult, error) {
+func (t *TSSService) processKeysignProtocol(ctx context.Context, mpcWrapper *vault.MPCWrapperImp, sessionHandle vault.Handle, sessionID, hexEncryptionKey string, parties []string, messageID string) (*KeysignResult, error) {
 	messenger := relay.NewMessenger(RelayServer, sessionID, hexEncryptionKey, true, messageID)
 	relayClient := vgrelay.NewRelayClient(RelayServer)
-	var messageCache sync.Map
+	messageCache := map[string]struct{}{}
 
-	go func() {
-		for {
-			outbound, err := mpcWrapper.SignSessionOutputMessage(sessionHandle)
-			if err != nil {
-				t.logger.WithError(err).Debug("Failed to get output message")
-				return
-			}
-			if len(outbound) == 0 {
-				return
-			}
-
-			encodedOutbound := base64.StdEncoding.EncodeToString(outbound)
-			for i := 0; i < len(parties); i++ {
-				receiver, err := mpcWrapper.SignSessionMessageReceiver(sessionHandle, outbound, i)
-				if err != nil {
-					t.logger.WithError(err).Debug("Failed to get receiver")
-					continue
-				}
-				if len(receiver) == 0 {
-					break
-				}
-
-				t.logger.WithField("receiver", string(receiver)).Debug("Sending message")
-				_ = messenger.Send(t.localPartyID, string(receiver), encodedOutbound)
-			}
-		}
-	}()
+	// Drain initial outbound messages before reading inbound messages.
+	if err := t.sendAllKeysignOutputMessages(mpcWrapper, sessionHandle, messenger, parties); err != nil {
+		return nil, fmt.Errorf("send initial keysign messages: %w", err)
+	}
 
 	start := time.Now()
 	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		if time.Since(start) > 2*time.Minute {
 			return nil, fmt.Errorf("keysign timeout")
 		}
@@ -300,7 +284,7 @@ func (t *TSSService) processKeysignProtocol(mpcWrapper *vault.MPCWrapperImp, ses
 			}
 
 			cacheKey := fmt.Sprintf("%s-%s", sessionID, msg.Hash)
-			if _, found := messageCache.Load(cacheKey); found {
+			if _, found := messageCache[cacheKey]; found {
 				continue
 			}
 
@@ -323,7 +307,7 @@ func (t *TSSService) processKeysignProtocol(mpcWrapper *vault.MPCWrapperImp, ses
 				continue
 			}
 
-			messageCache.Store(cacheKey, true)
+			messageCache[cacheKey] = struct{}{}
 			t.logger.WithFields(logrus.Fields{
 				"from": msg.From,
 				"hash": msg.Hash[:8],
@@ -331,19 +315,9 @@ func (t *TSSService) processKeysignProtocol(mpcWrapper *vault.MPCWrapperImp, ses
 
 			_ = relayClient.DeleteMessageFromServer(sessionID, t.localPartyID, msg.Hash, messageID)
 
-			for {
-				outbound, err := mpcWrapper.SignSessionOutputMessage(sessionHandle)
-				if err != nil || len(outbound) == 0 {
-					break
-				}
-				encodedOutbound := base64.StdEncoding.EncodeToString(outbound)
-				for i := 0; i < len(parties); i++ {
-					receiver, _ := mpcWrapper.SignSessionMessageReceiver(sessionHandle, outbound, i)
-					if len(receiver) == 0 {
-						break
-					}
-					_ = messenger.Send(t.localPartyID, string(receiver), encodedOutbound)
-				}
+			if err := t.sendAllKeysignOutputMessages(mpcWrapper, sessionHandle, messenger, parties); err != nil {
+				t.logger.WithError(err).Debug("Failed to send keysign output messages")
+				continue
 			}
 
 			if isFinished {
@@ -376,5 +350,32 @@ func (t *TSSService) processKeysignProtocol(mpcWrapper *vault.MPCWrapperImp, ses
 		}
 
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func (t *TSSService) sendAllKeysignOutputMessages(mpcWrapper *vault.MPCWrapperImp, sessionHandle vault.Handle, messenger *relay.MessengerImp, parties []string) error {
+	for {
+		outbound, err := mpcWrapper.SignSessionOutputMessage(sessionHandle)
+		if err != nil {
+			return err
+		}
+		if len(outbound) == 0 {
+			return nil
+		}
+
+		encodedOutbound := base64.StdEncoding.EncodeToString(outbound)
+		for i := 0; i < len(parties); i++ {
+			receiver, err := mpcWrapper.SignSessionMessageReceiver(sessionHandle, outbound, i)
+			if err != nil {
+				t.logger.WithError(err).Debug("Failed to get receiver")
+				continue
+			}
+			if len(receiver) == 0 {
+				break
+			}
+			if err := messenger.Send(t.localPartyID, string(receiver), encodedOutbound); err != nil {
+				t.logger.WithError(err).Debug("Failed to send message")
+			}
+		}
 	}
 }

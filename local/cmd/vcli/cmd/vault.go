@@ -108,12 +108,19 @@ Example:
 			if envPass := os.Getenv("VAULT_PASSWORD"); envPass != "" {
 				actualPassword = envPass
 			}
+			if strings.TrimSpace(verifierURL) == "" {
+				cfg, err := LoadConfig()
+				if err != nil {
+					return fmt.Errorf("load config: %w", err)
+				}
+				verifierURL = cfg.Verifier
+			}
 			return runVaultReshare(ResolvePluginID(pluginID), verifierURL, actualPassword)
 		},
 	}
 
 	cmd.Flags().StringVar(&pluginID, "plugin", "", "Plugin ID or alias (required)")
-	cmd.Flags().StringVarP(&verifierURL, "verifier", "v", "http://localhost:8080", "Verifier server URL")
+	cmd.Flags().StringVarP(&verifierURL, "verifier", "v", "", "Verifier server URL (defaults to configured verifier)")
 	cmd.Flags().StringVar(&password, "password", "", "Fast Vault password (or set VAULT_PASSWORD)")
 	cmd.MarkFlagRequired("plugin")
 
@@ -617,20 +624,29 @@ func runVaultImport(file, password string) error {
 		format = ".vult (protobuf)"
 		fmt.Println("Detected .vult protobuf format")
 	} else {
-		// Fall back to JSON format
-		var backup BackupVault
-		jsonErr := json.Unmarshal(data, &backup)
-		if jsonErr == nil && backup.Version != "" {
-			localVault = backup.Vault
-			format = fmt.Sprintf("iOS backup (v%s)", backup.Version)
-			fmt.Printf("Detected iOS backup format (version: %s)\n", backup.Version)
+		// DecryptVaultFromBackup has a bug: it doesn't base64-decode the Vault
+		// field when IsEncrypted=false. Try parseVultFile which handles this.
+		pbVault, parseErr := parseVultFile(data, password)
+		if parseErr == nil {
+			localVault = convertProtoVaultToLocal(pbVault)
+			format = ".vult (protobuf)"
+			fmt.Println("Detected .vult protobuf format")
 		} else {
-			jsonErr = json.Unmarshal(data, &localVault)
-			if jsonErr != nil {
-				return fmt.Errorf("parse vault file: protobuf error: %v, json error: %v", err, jsonErr)
+			// Fall back to JSON format
+			var backup BackupVault
+			jsonErr := json.Unmarshal(data, &backup)
+			if jsonErr == nil && backup.Version != "" {
+				localVault = backup.Vault
+				format = fmt.Sprintf("iOS backup (v%s)", backup.Version)
+				fmt.Printf("Detected iOS backup format (version: %s)\n", backup.Version)
+			} else {
+				jsonErr = json.Unmarshal(data, &localVault)
+				if jsonErr != nil {
+					return fmt.Errorf("parse vault file: protobuf error: %v, json error: %v", err, jsonErr)
+				}
+				format = "JSON"
+				fmt.Println("Detected JSON format")
 			}
-			format = "JSON"
-			fmt.Println("Detected JSON format")
 		}
 	}
 
@@ -845,19 +861,14 @@ func authenticateVault(vault *LocalVault, password string) error {
 		return fmt.Errorf("authentication failed (%d): %s", resp.StatusCode, string(body))
 	}
 
-	var authResp struct {
-		Data struct {
-			Token string `json:"token"`
-		} `json:"data"`
-	}
-	err = json.Unmarshal(body, &authResp)
+	tokenValue, err := extractAuthTokenFromResponse(body)
 	if err != nil {
 		return fmt.Errorf("parse auth response: %w", err)
 	}
 
 	// Save token
 	authToken := AuthToken{
-		Token:     authResp.Data.Token,
+		Token:     tokenValue,
 		PublicKey: vault.PublicKeyECDSA,
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}

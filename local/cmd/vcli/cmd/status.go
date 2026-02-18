@@ -35,6 +35,7 @@ func runStatus() error {
 		{"Verifier", cfg.Verifier + "/healthz"},
 		{"Fee Plugin", cfg.FeePlugin + "/healthz"},
 		{"DCA Plugin", cfg.DCAPlugin + "/healthz"},
+		{"Sends Plugin", cfg.SendsPlugin + "/healthz"},
 	}
 
 	for _, svc := range services {

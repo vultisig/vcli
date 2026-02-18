@@ -10,8 +10,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spf13/cobra"
 )
 
@@ -84,6 +86,44 @@ type AuthToken struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+type authMessagePayload struct {
+	Message   string `json:"message"`
+	Nonce     string `json:"nonce"`
+	ExpiresAt string `json:"expiresAt"`
+	Address   string `json:"address"`
+}
+
+func extractAuthTokenFromResponse(body []byte) (string, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", err
+	}
+
+	if data, ok := payload["data"].(map[string]any); ok {
+		if token, ok := data["token"].(string); ok && token != "" {
+			return token, nil
+		}
+		if token, ok := data["access_token"].(string); ok && token != "" {
+			return token, nil
+		}
+		if token, ok := data["jwt"].(string); ok && token != "" {
+			return token, nil
+		}
+	}
+
+	if token, ok := payload["token"].(string); ok && token != "" {
+		return token, nil
+	}
+	if token, ok := payload["access_token"].(string); ok && token != "" {
+		return token, nil
+	}
+	if token, ok := payload["jwt"].(string); ok && token != "" {
+		return token, nil
+	}
+
+	return "", fmt.Errorf("auth response missing token")
+}
+
 func runAuthLogin(vaultID, password string) error {
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -118,8 +158,23 @@ func runAuthLogin(vaultID, password string) error {
 	}
 	nonce := hex.EncodeToString(nonceBytes)
 
-	expiryTime := time.Now().Add(5 * time.Minute)
-	message := fmt.Sprintf("%s:%d", nonce, expiryTime.Unix())
+	address, err := deriveEthereumAddressFromPubKey(vault.PublicKeyECDSA)
+	if err != nil {
+		return fmt.Errorf("derive address from vault public key: %w", err)
+	}
+
+	expiryTime := time.Now().Add(15 * time.Minute).UTC()
+	messagePayload := authMessagePayload{
+		Message:   "Sign into Vultisig App Store",
+		Nonce:     nonce,
+		ExpiresAt: expiryTime.Format(time.RFC3339),
+		Address:   strings.ToLower(address),
+	}
+	messageBytes, err := json.Marshal(messagePayload)
+	if err != nil {
+		return fmt.Errorf("marshal auth message: %w", err)
+	}
+	message := string(messageBytes)
 
 	fmt.Printf("Authenticating with verifier...\n")
 	fmt.Printf("  Vault: %s\n", vault.Name)
@@ -133,7 +188,10 @@ func runAuthLogin(vaultID, password string) error {
 	fmt.Println("\nPerforming TSS keysign for authentication...")
 
 	derivePath := "m/44'/60'/0'/0/0"
-	results, err := tss.Keysign(ctx, vault, []string{message}, derivePath, false, password)
+	ethPrefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
+	messageHash := crypto.Keccak256([]byte(ethPrefixedMessage))
+	hexMessage := hex.EncodeToString(messageHash)
+	results, err := tss.KeysignWithFastVault(ctx, vault, []string{hexMessage}, derivePath, password)
 	if err != nil {
 		return fmt.Errorf("TSS keysign failed: %w", err)
 	}
@@ -142,7 +200,7 @@ func runAuthLogin(vaultID, password string) error {
 		return fmt.Errorf("no signature result")
 	}
 
-	signature := results[0].DerSignature
+	signature := "0x" + results[0].R + results[0].S + results[0].RecoveryID
 
 	authReq := map[string]string{
 		"message":        message,
@@ -175,18 +233,13 @@ func runAuthLogin(vaultID, password string) error {
 		return fmt.Errorf("authentication failed (%d): %s", resp.StatusCode, string(body))
 	}
 
-	var authResp struct {
-		Data struct {
-			Token string `json:"token"`
-		} `json:"data"`
-	}
-	err = json.Unmarshal(body, &authResp)
+	tokenValue, err := extractAuthTokenFromResponse(body)
 	if err != nil {
 		return fmt.Errorf("parse auth response: %w", err)
 	}
 
 	authToken := AuthToken{
-		Token:     authResp.Data.Token,
+		Token:     tokenValue,
 		PublicKey: vault.PublicKeyECDSA,
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}
@@ -200,6 +253,18 @@ func runAuthLogin(vaultID, password string) error {
 	fmt.Printf("  Token expires: %s\n", authToken.ExpiresAt.Format(time.RFC3339))
 
 	return nil
+}
+
+func deriveEthereumAddressFromPubKey(publicKeyHex string) (string, error) {
+	keyBytes, err := hex.DecodeString(strings.TrimPrefix(strings.TrimPrefix(publicKeyHex, "0x"), "0X"))
+	if err != nil {
+		return "", fmt.Errorf("decode public key: %w", err)
+	}
+	pubKey, err := crypto.DecompressPubkey(keyBytes)
+	if err != nil {
+		return "", fmt.Errorf("decompress pubkey: %w", err)
+	}
+	return crypto.PubkeyToAddress(*pubKey).Hex(), nil
 }
 
 func runAuthStatus() error {

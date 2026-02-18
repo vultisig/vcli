@@ -374,6 +374,7 @@ if [ -d "$ROOT_DIR/agent-backend" ]; then
     export DATABASE_DSN="postgres://vultisig:vultisig@localhost:5432/vultisig-agent?sslmode=disable"
     export REDIS_URI="redis://:vultisig@localhost:6379"
     export VERIFIER_URL="http://localhost:8080"
+    export DCA_PLUGIN_URL="http://localhost:8082"
     export LOG_FORMAT="text"
 
     go build -o /tmp/agent-backend-server ./cmd/server

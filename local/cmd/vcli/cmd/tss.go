@@ -35,16 +35,16 @@ type KeyShare struct {
 }
 
 type LocalVault struct {
-	Name           string      `json:"name"`
-	PublicKeyECDSA string      `json:"pubKeyECDSA"`
-	PublicKeyEdDSA string      `json:"pubKeyEdDSA"`
-	HexChainCode   string      `json:"hexChainCode"`
-	LocalPartyID   string      `json:"localPartyID"`
-	Signers        []string    `json:"signers"`
-	KeyShares      []KeyShare  `json:"keyshares"`
-	ResharePrefix  string      `json:"resharePrefix,omitempty"`
-	CreatedAt      string      `json:"createdAt"`
-	LibType        int         `json:"libType"` // 0 = GG20, 1 = DKLS
+	Name           string     `json:"name"`
+	PublicKeyECDSA string     `json:"pubKeyECDSA"`
+	PublicKeyEdDSA string     `json:"pubKeyEdDSA"`
+	HexChainCode   string     `json:"hexChainCode"`
+	LocalPartyID   string     `json:"localPartyID"`
+	Signers        []string   `json:"signers"`
+	KeyShares      []KeyShare `json:"keyshares"`
+	ResharePrefix  string     `json:"resharePrefix,omitempty"`
+	CreatedAt      string     `json:"createdAt"`
+	LibType        int        `json:"libType"` // 0 = GG20, 1 = DKLS
 }
 
 type BackupVault struct {
@@ -250,8 +250,15 @@ func (t *TSSService) Reshare(ctx context.Context, vault *LocalVault, pluginID, v
 	t.logger.Info("Requesting Fast Vault Server to join reshare...")
 	err = t.requestFastVaultReshare(ctx, vault, sessionID, hexEncryptionKey, vaultPassword)
 	if err != nil {
-		t.logger.WithError(err).Warn("Failed to request Fast Vault Server - continuing anyway")
+		return nil, fmt.Errorf("request fast vault reshare: %w", err)
 	}
+
+	t.logger.Info("Waiting for Fast Vault Server to join before requesting Verifier...")
+	_, err = t.waitForParties(ctx, sessionID, 2)
+	if err != nil {
+		return nil, fmt.Errorf("fast vault did not join: %w", err)
+	}
+	t.logger.Info("Fast Vault Server joined successfully")
 
 	t.logger.Info("Requesting Verifier to join reshare...")
 	err = t.requestVerifierReshare(ctx, vault, sessionID, hexEncryptionKey, pluginID, verifierURL, authHeader)
@@ -351,8 +358,14 @@ func (t *TSSService) requestVerifierReshare(ctx context.Context, vault *LocalVau
 		HexChainCode     string   `json:"hex_chain_code"`
 		LocalPartyId     string   `json:"local_party_id"`
 		OldParties       []string `json:"old_parties"`
+		OldResharePrefix string   `json:"old_reshare_prefix"`
 		Email            string   `json:"email"`
 		PluginID         string   `json:"plugin_id"`
+		ReshareType      int      `json:"reshare_type"`
+		LibType          int      `json:"lib_type"`
+		UseVultisigRelay bool     `json:"use_vultisig_relay"`
+		RelayURL         string   `json:"relay_url"`
+		RelayServer      string   `json:"relay_server"`
 	}
 
 	req := VerifierReshareRequest{
@@ -363,8 +376,14 @@ func (t *TSSService) requestVerifierReshare(ctx context.Context, vault *LocalVau
 		HexChainCode:     vault.HexChainCode,
 		LocalPartyId:     "verifier-" + sessionID[:8],
 		OldParties:       vault.Signers,
+		OldResharePrefix: vault.ResharePrefix,
 		Email:            "",
 		PluginID:         pluginID,
+		ReshareType:      1,
+		LibType:          vault.LibType,
+		UseVultisigRelay: true,
+		RelayURL:         RelayServer,
+		RelayServer:      RelayServer,
 	}
 
 	reqJSON, err := json.Marshal(req)
@@ -421,8 +440,15 @@ func (t *TSSService) ReshareWithPlugin(ctx context.Context, vault *LocalVault, p
 	t.logger.Info("Requesting Fast Vault Server to join reshare...")
 	err = t.requestFastVaultReshare(ctx, vault, sessionID, hexEncryptionKey, vaultPassword)
 	if err != nil {
-		t.logger.WithError(err).Warn("Failed to request Fast Vault Server - continuing anyway")
+		return nil, fmt.Errorf("request fast vault reshare: %w", err)
 	}
+
+	t.logger.Info("Waiting for Fast Vault Server to join before requesting Verifier...")
+	_, err = t.waitForParties(ctx, sessionID, 2)
+	if err != nil {
+		return nil, fmt.Errorf("fast vault did not join: %w", err)
+	}
+	t.logger.Info("Fast Vault Server joined successfully")
 
 	t.logger.Info("Requesting Verifier to join reshare (with plugin)...")
 	err = t.requestVerifierReshare(ctx, vault, sessionID, hexEncryptionKey, pluginID, verifierURL, authHeader)
@@ -666,6 +692,7 @@ func (t *TSSService) requestFastVaultKeysign(ctx context.Context, vault *LocalVa
 		HexEncryptionKey string   `json:"hex_encryption_key"`
 		DerivePath       string   `json:"derive_path"`
 		IsECDSA          bool     `json:"is_ecdsa"`
+		DoSetupMsg       bool     `json:"do_setup_msg"`
 		VaultPassword    string   `json:"vault_password"`
 	}
 
@@ -681,6 +708,7 @@ func (t *TSSService) requestFastVaultKeysign(ctx context.Context, vault *LocalVa
 		HexEncryptionKey: hexEncKey,
 		DerivePath:       derivePath,
 		IsECDSA:          !isEdDSA,
+		DoSetupMsg:       false,
 		VaultPassword:    vaultPassword,
 	}
 
@@ -689,7 +717,7 @@ func (t *TSSService) requestFastVaultKeysign(ctx context.Context, vault *LocalVa
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := FastVaultServer + "/sign"
+	url := FastVaultServer + "/vault/sign"
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqJSON))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)

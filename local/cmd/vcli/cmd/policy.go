@@ -223,30 +223,65 @@ func runPolicyList(pluginID string) error {
 		return fmt.Errorf("request failed (%d): %s", resp.StatusCode, string(body))
 	}
 
-	var policies []map[string]interface{}
-	err = json.Unmarshal(body, &policies)
+	var result struct {
+		Data struct {
+			Policies []struct {
+				ID        string `json:"id"`
+				Active    bool   `json:"active"`
+				CreatedAt string `json:"created_at"`
+				Recipe    struct {
+					SourceAsset string `json:"source_asset"`
+					DestAsset   string `json:"dest_asset"`
+					Amount      string `json:"amount"`
+					Schedule    string `json:"schedule"`
+				} `json:"recipe"`
+			} `json:"policies"`
+			TotalCount int `json:"total_count"`
+		} `json:"data"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+
+	err = json.Unmarshal(body, &result)
 	if err != nil {
-		var result map[string]interface{}
-		json.Unmarshal(body, &result)
-		prettyJSON, _ := json.MarshalIndent(result, "", "  ")
+		var rawResult map[string]any
+		json.Unmarshal(body, &rawResult)
+		prettyJSON, _ := json.MarshalIndent(rawResult, "", "  ")
 		fmt.Println(string(prettyJSON))
 		return nil
 	}
 
-	if len(policies) == 0 {
+	if result.Error.Message != "" {
+		return fmt.Errorf("verifier error: %s", result.Error.Message)
+	}
+
+	if result.Data.TotalCount == 0 || len(result.Data.Policies) == 0 {
 		fmt.Println("No policies found for this plugin.")
+		fmt.Printf("\nTo create a policy: vcli policy add --plugin %s --policy-file <file> --password <password>\n", pluginID)
 		return nil
 	}
 
-	fmt.Printf("Found %d policies:\n\n", len(policies))
-	for i, p := range policies {
-		policyID := p["id"]
-		active := p["active"]
-		createdAt := p["created_at"]
-		fmt.Printf("  %d. Policy ID: %v\n", i+1, policyID)
-		fmt.Printf("     Active: %v\n", active)
-		fmt.Printf("     Created: %v\n\n", createdAt)
+	fmt.Printf("Found %d policies:\n\n", result.Data.TotalCount)
+	fmt.Println("┌──────────────────────────────────────┬────────┬─────────────────────┐")
+	fmt.Println("│ Policy ID                            │ Active │ Created             │")
+	fmt.Println("├──────────────────────────────────────┼────────┼─────────────────────┤")
+	for _, p := range result.Data.Policies {
+		id := p.ID
+		if len(id) > 36 {
+			id = id[:33] + "..."
+		}
+		active := "No"
+		if p.Active {
+			active = "Yes"
+		}
+		created := p.CreatedAt
+		if len(created) > 19 {
+			created = created[:19]
+		}
+		fmt.Printf("│ %-36s │ %-6s │ %-19s │\n", id, active, created)
 	}
+	fmt.Println("└──────────────────────────────────────┴────────┴─────────────────────┘")
 
 	return nil
 }
@@ -327,8 +362,11 @@ func runPolicyAdd(pluginID, configFile string, password string) error {
 	}
 	recipeBase64 := base64.StdEncoding.EncodeToString(policyBytes)
 
-	policyVersion := 1
-	pluginVersion := "1.0.0"
+	policyVersion := 0
+	pluginVersion, err := getVerifierPluginVersion(cfg.Verifier, pluginID)
+	if err != nil {
+		return fmt.Errorf("get plugin version: %w", err)
+	}
 
 	// Step 5: Create signature message and sign
 	// Message format: {recipe}*#*{public_key}*#*{policy_version}*#*{plugin_version}
@@ -503,6 +541,53 @@ func runPolicyAdd(pluginID, configFile string, password string) error {
 
 func getPluginServerURL(verifierURL, pluginID string) (string, error) {
 	return GetPluginServerURL(pluginID)
+}
+
+func getVerifierPluginVersion(verifierURL, pluginID string) (string, error) {
+	const fallbackVersion = "1.0.0"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	url := fmt.Sprintf("%s/plugins/%s", verifierURL, pluginID)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("plugin request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+
+	var payload struct {
+		Data struct {
+			Version       string `json:"version"`
+			PluginVersion string `json:"plugin_version"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return fallbackVersion, nil
+	}
+	if payload.Data.Version != "" {
+		return payload.Data.Version, nil
+	}
+	if payload.Data.PluginVersion != "" {
+		return payload.Data.PluginVersion, nil
+	}
+
+	return fallbackVersion, nil
 }
 
 func getPluginPolicySuggest(pluginServerURL string, recipeConfig map[string]interface{}) (*rtypes.PolicySuggest, error) {
