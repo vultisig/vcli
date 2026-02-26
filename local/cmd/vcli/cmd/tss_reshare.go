@@ -8,14 +8,13 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	"github.com/vultisig/vultiserver/relay"
 	vgcommon "github.com/vultisig/vultisig-go/common"
 	vgrelay "github.com/vultisig/vultisig-go/relay"
-	"github.com/vultisig/vultiserver/relay"
 
 	"github.com/vultisig/verifier/vault"
 	"github.com/vultisig/verifier/vault_config"
@@ -51,8 +50,15 @@ func (t *TSSService) ReshareWithDKLS(ctx context.Context, v *LocalVault, pluginI
 	t.logger.Info("Requesting Fast Vault Server to join reshare...")
 	err = t.requestFastVaultReshare(ctx, v, sessionID, hexEncryptionKey, vaultPassword)
 	if err != nil {
-		t.logger.WithError(err).Warn("Failed to request Fast Vault Server - continuing anyway")
+		return nil, fmt.Errorf("request fast vault reshare: %w", err)
 	}
+
+	t.logger.Info("Waiting for Fast Vault Server to join before requesting Verifier...")
+	_, err = t.waitForParties(ctx, sessionID, 2)
+	if err != nil {
+		return nil, fmt.Errorf("fast vault did not join: %w", err)
+	}
+	t.logger.Info("Fast Vault Server joined successfully")
 
 	t.logger.Info("Requesting Verifier to join reshare (with plugin)...")
 	err = t.requestVerifierReshare(ctx, v, sessionID, hexEncryptionKey, pluginID, verifierURL, authHeader)
@@ -91,13 +97,13 @@ func (t *TSSService) ReshareWithDKLS(ctx context.Context, v *LocalVault, pluginI
 	}
 
 	t.logger.Info("Running DKLS reshare protocol (ECDSA)...")
-	ecdsaPubkey, chainCode, err := t.runReshareAsInitiator(dklsService, v, sessionID, hexEncryptionKey, parties, false)
+	ecdsaPubkey, chainCode, err := t.runReshareAsInitiator(ctx, dklsService, v, sessionID, hexEncryptionKey, parties, false)
 	if err != nil {
 		return nil, fmt.Errorf("reshare ECDSA failed: %w", err)
 	}
 
 	t.logger.Info("Running DKLS reshare protocol (EdDSA)...")
-	eddsaPubkey, _, err := t.runReshareAsInitiator(dklsService, v, sessionID, hexEncryptionKey, parties, true)
+	eddsaPubkey, _, err := t.runReshareAsInitiator(ctx, dklsService, v, sessionID, hexEncryptionKey, parties, true)
 	if err != nil {
 		return nil, fmt.Errorf("reshare EdDSA failed: %w", err)
 	}
@@ -128,7 +134,7 @@ func (t *TSSService) ReshareWithDKLS(ctx context.Context, v *LocalVault, pluginI
 	return newVault, nil
 }
 
-func (t *TSSService) runReshareAsInitiator(dklsService *vault.DKLSTssService, v *LocalVault, sessionID, hexEncryptionKey string, parties []string, isEdDSA bool) (string, string, error) {
+func (t *TSSService) runReshareAsInitiator(ctx context.Context, dklsService *vault.DKLSTssService, v *LocalVault, sessionID, hexEncryptionKey string, parties []string, isEdDSA bool) (string, string, error) {
 	mpcWrapper := dklsService.GetMPCKeygenWrapper(isEdDSA)
 	relayClient := vgrelay.NewRelayClient(RelayServer)
 
@@ -210,47 +216,27 @@ func (t *TSSService) runReshareAsInitiator(dklsService *vault.DKLSTssService, v 
 		return "", "", fmt.Errorf("create session from setup: %w", err)
 	}
 
-	return t.processReshareProtocol(mpcWrapper, sessionHandle, sessionID, hexEncryptionKey, parties, isEdDSA)
+	return t.processReshareProtocol(ctx, mpcWrapper, sessionHandle, sessionID, hexEncryptionKey, parties, isEdDSA)
 }
 
-func (t *TSSService) processReshareProtocol(mpcWrapper *vault.MPCWrapperImp, sessionHandle vault.Handle, sessionID, hexEncryptionKey string, parties []string, isEdDSA bool) (string, string, error) {
+func (t *TSSService) processReshareProtocol(ctx context.Context, mpcWrapper *vault.MPCWrapperImp, sessionHandle vault.Handle, sessionID, hexEncryptionKey string, parties []string, isEdDSA bool) (string, string, error) {
 	messenger := relay.NewMessenger(RelayServer, sessionID, hexEncryptionKey, true, "")
 	relayClient := vgrelay.NewRelayClient(RelayServer)
-	var messageCache sync.Map
+	messageCache := map[string]struct{}{}
 
-	go func() {
-		for {
-			outbound, err := mpcWrapper.QcSessionOutputMessage(sessionHandle)
-			if err != nil {
-				t.logger.WithError(err).Debug("Failed to get output message")
-				return
-			}
-			if len(outbound) == 0 {
-				return
-			}
-
-			encodedOutbound := base64.StdEncoding.EncodeToString(outbound)
-			for i := 0; i < len(parties); i++ {
-				receiver, err := mpcWrapper.QcSessionMessageReceiver(sessionHandle, outbound, i)
-				if err != nil {
-					t.logger.WithError(err).Debug("Failed to get receiver")
-					continue
-				}
-				if len(receiver) == 0 {
-					break
-				}
-
-				t.logger.WithField("receiver", receiver).Debug("Sending message")
-				err = messenger.Send(t.localPartyID, receiver, encodedOutbound)
-				if err != nil {
-					t.logger.WithError(err).Debug("Failed to send message")
-				}
-			}
-		}
-	}()
+	// Drain initial outbound messages before processing inbound relay traffic.
+	if err := t.sendAllReshareOutputMessages(mpcWrapper, sessionHandle, messenger, parties); err != nil {
+		return "", "", fmt.Errorf("send initial reshare messages: %w", err)
+	}
 
 	start := time.Now()
 	for {
+		select {
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		default:
+		}
+
 		if time.Since(start) > 2*time.Minute {
 			return "", "", fmt.Errorf("reshare timeout")
 		}
@@ -268,7 +254,7 @@ func (t *TSSService) processReshareProtocol(mpcWrapper *vault.MPCWrapperImp, ses
 			}
 
 			cacheKey := fmt.Sprintf("%s-%s", sessionID, msg.Hash)
-			if _, found := messageCache.Load(cacheKey); found {
+			if _, found := messageCache[cacheKey]; found {
 				continue
 			}
 
@@ -291,7 +277,7 @@ func (t *TSSService) processReshareProtocol(mpcWrapper *vault.MPCWrapperImp, ses
 				continue
 			}
 
-			messageCache.Store(cacheKey, true)
+			messageCache[cacheKey] = struct{}{}
 			t.logger.WithFields(logrus.Fields{
 				"from": msg.From,
 				"hash": msg.Hash[:8],
@@ -299,19 +285,9 @@ func (t *TSSService) processReshareProtocol(mpcWrapper *vault.MPCWrapperImp, ses
 
 			_ = relayClient.DeleteMessageFromServer(sessionID, t.localPartyID, msg.Hash, "")
 
-			for {
-				outbound, err := mpcWrapper.QcSessionOutputMessage(sessionHandle)
-				if err != nil || len(outbound) == 0 {
-					break
-				}
-				encodedOutbound := base64.StdEncoding.EncodeToString(outbound)
-				for i := 0; i < len(parties); i++ {
-					receiver, _ := mpcWrapper.QcSessionMessageReceiver(sessionHandle, outbound, i)
-					if len(receiver) == 0 {
-						break
-					}
-					_ = messenger.Send(t.localPartyID, receiver, encodedOutbound)
-				}
+			if err := t.sendAllReshareOutputMessages(mpcWrapper, sessionHandle, messenger, parties); err != nil {
+				t.logger.WithError(err).Debug("Failed to send reshare output messages")
+				continue
 			}
 
 			if isFinished {
@@ -353,5 +329,32 @@ func (t *TSSService) processReshareProtocol(mpcWrapper *vault.MPCWrapperImp, ses
 		}
 
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func (t *TSSService) sendAllReshareOutputMessages(mpcWrapper *vault.MPCWrapperImp, sessionHandle vault.Handle, messenger *relay.MessengerImp, parties []string) error {
+	for {
+		outbound, err := mpcWrapper.QcSessionOutputMessage(sessionHandle)
+		if err != nil {
+			return err
+		}
+		if len(outbound) == 0 {
+			return nil
+		}
+
+		encodedOutbound := base64.StdEncoding.EncodeToString(outbound)
+		for i := 0; i < len(parties); i++ {
+			receiver, err := mpcWrapper.QcSessionMessageReceiver(sessionHandle, outbound, i)
+			if err != nil {
+				t.logger.WithError(err).Debug("Failed to get receiver")
+				continue
+			}
+			if len(receiver) == 0 {
+				break
+			}
+			if err := messenger.Send(t.localPartyID, receiver, encodedOutbound); err != nil {
+				t.logger.WithError(err).Debug("Failed to send message")
+			}
+		}
 	}
 }

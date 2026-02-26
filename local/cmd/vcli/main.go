@@ -9,6 +9,20 @@ import (
 	"github.com/vultisig/vcli/local/cmd/vcli/cmd"
 )
 
+const (
+	prodVerifierURL = "https://verifier.vultisig.com"
+	prodDCAURL      = "https://plugin-dca-swap.prod.plugins.vultisig.com"
+	prodFeesURL     = "https://plugin-fees.prod.plugins.vultisig.com"
+	prodSendsURL    = "https://plugin-dca-send.prod.plugins.vultisig.com"
+)
+
+func applyProdEndpointEnv() {
+	_ = os.Setenv("VCLI_VERIFIER_URL", prodVerifierURL)
+	_ = os.Setenv("VCLI_DCA_PLUGIN_URL", prodDCAURL)
+	_ = os.Setenv("VCLI_FEE_PLUGIN_URL", prodFeesURL)
+	_ = os.Setenv("VCLI_SENDS_PLUGIN_URL", prodSendsURL)
+}
+
 func main() {
 	// Ensure go-wrappers CGO libraries are downloaded and library path is set.
 	// This must happen before any CGO code is loaded.
@@ -16,6 +30,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to setup go-wrappers: %v\n", err)
 		fmt.Fprintf(os.Stderr, "TSS operations may not work. Run 'vcli start' to retry download.\n")
 	}
+
+	var useProd bool
 
 	rootCmd := &cobra.Command{
 		Use:   "vcli",
@@ -50,6 +66,7 @@ FLAG CONVENTIONS:
   --password  = Vault/Fast Vault password (all commands)
   --plugin    = Plugin ID or alias
   -c, --policy-file    = Config file path
+  --prod      = Use production verifier/plugin endpoints
 
 Commands:
   start    - Start all local development services
@@ -62,7 +79,14 @@ Commands:
   report   - Show comprehensive validation report
   status   - Show quick service status
 `,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if useProd {
+				applyProdEndpointEnv()
+			}
+			return nil
+		},
 	}
+	rootCmd.PersistentFlags().BoolVar(&useProd, "prod", false, "Use production verifier/plugin endpoints")
 
 	rootCmd.AddCommand(cmd.NewStartCmd())
 	rootCmd.AddCommand(cmd.NewStopCmd())

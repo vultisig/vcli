@@ -27,6 +27,7 @@ func NewPluginCmd() *cobra.Command {
 	cmd.AddCommand(newPluginInstallCmd())
 	cmd.AddCommand(newPluginUninstallCmd())
 	cmd.AddCommand(newPluginSpecCmd())
+	cmd.AddCommand(newPluginInstalledCmd())
 
 	return cmd
 }
@@ -245,16 +246,26 @@ func runPluginInstall(pluginIDOrAlias string, password string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	authHeader, err := GetAuthHeader()
-	if err != nil {
-		return fmt.Errorf("authentication required: %w\n\nRun 'vcli vault import --password xxx' to authenticate first", err)
-	}
-
 	vaults, err := ListVaults()
 	if err != nil || len(vaults) == 0 {
 		return fmt.Errorf("no vaults found. Import a vault first: vcli vault import")
 	}
 	vault := vaults[0]
+
+	authHeader, err := GetAuthHeader()
+	if err != nil {
+		if password == "" {
+			return fmt.Errorf("authentication required: %w\n\nRun 'vcli vault import --password xxx' to authenticate first", err)
+		}
+		fmt.Println("No valid auth token found; authenticating with Fast Vault...")
+		if authErr := authenticateVault(vault, password); authErr != nil {
+			return fmt.Errorf("authentication required: %w\n\nautomatic authentication failed: %v", err, authErr)
+		}
+		authHeader, err = GetAuthHeader()
+		if err != nil {
+			return fmt.Errorf("authentication required after re-auth: %w", err)
+		}
+	}
 
 	fmt.Printf("Installing plugin %s...\n", pluginID)
 	fmt.Printf("  Vault: %s (%s...)\n", vault.Name, vault.PublicKeyECDSA[:16])
@@ -273,11 +284,26 @@ func runPluginInstall(pluginIDOrAlias string, password string) error {
 		return fmt.Errorf("password is required for Fast Vault reshare. Use --password flag")
 	}
 
-	// Check if plugin is already installed
-	dbRecord := checkPluginInstallation(pluginID, vault.PublicKeyECDSA)
-	if dbRecord != "" {
+	isProduction := strings.Contains(cfg.Verifier, "vultisig.com")
+
+	var isInstalled bool
+	var dbRecord string
+	if isProduction {
+		installed, err := checkPluginInstallationProduction(cfg, pluginID, vault.PublicKeyECDSA)
+		if err != nil {
+			fmt.Printf("  Warning: Could not check installation status: %v\n", err)
+		}
+		isInstalled = installed
+	} else {
+		dbRecord = checkPluginInstallation(pluginID, vault.PublicKeyECDSA)
+		isInstalled = dbRecord != ""
+	}
+
+	if isInstalled {
 		fmt.Printf("\n  Plugin %s is already installed for this vault.\n", pluginID)
-		fmt.Printf("  Installed at: %s\n", dbRecord)
+		if dbRecord != "" {
+			fmt.Printf("  Installed at: %s\n", dbRecord)
+		}
 		fmt.Println("\n  To reinstall, first run: vcli plugin uninstall", pluginID)
 		return nil
 	}
@@ -307,7 +333,7 @@ func runPluginInstall(pluginIDOrAlias string, password string) error {
 	tss := NewTSSService(vault.LocalPartyID)
 
 	reshareStart := time.Now()
-	reshareCtx, reshareCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	reshareCtx, reshareCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer reshareCancel()
 
 	newVault, err := tss.ReshareWithDKLS(reshareCtx, vault, pluginID, cfg.Verifier, authHeader, password)
@@ -316,10 +342,12 @@ func runPluginInstall(pluginIDOrAlias string, password string) error {
 	}
 	reshareDuration := time.Since(reshareStart)
 
-	err = SaveVault(newVault)
-	if err != nil {
-		return fmt.Errorf("save vault: %w", err)
-	}
+	// NOTE: We intentionally do NOT save the 4-party vault locally.
+	// The plugin's 2-of-4 keyshares are stored in MinIO by verifier and worker.
+	// The local vault remains at 2-of-2 so users can:
+	// 1. Sign transactions directly with CLI + Fast Vault Server
+	// 2. Install additional plugins from the same original vault
+	_ = newVault // Keyshare is uploaded to MinIO, not saved locally
 
 	totalDuration := time.Since(startTime)
 
@@ -329,7 +357,8 @@ func runPluginInstall(pluginIDOrAlias string, password string) error {
 
 	// Validate storage - check MinIO buckets (with retry)
 	verifierFile, verifierSize := checkMinioFileWithRetry("vultisig-verifier", pluginID, vault.PublicKeyECDSA, 3)
-	dcaFile, dcaSize := checkMinioFileWithRetry("vultisig-dca", pluginID, vault.PublicKeyECDSA, 3)
+	pluginBucket := getPluginBucket(pluginID)
+	pluginFile, pluginSize := checkMinioFileWithRetry(pluginBucket, pluginID, vault.PublicKeyECDSA, 3)
 
 	// Check database record
 	dbRecord = checkPluginInstallation(pluginID, vault.PublicKeyECDSA)
@@ -364,10 +393,11 @@ func runPluginInstall(pluginIDOrAlias string, password string) error {
 	} else {
 		fmt.Printf("│    Verifier (MinIO): ✗ %-41s │\n", "Not found")
 	}
-	if dcaFile != "" {
-		fmt.Printf("│    DCA Plugin (MinIO): ✓ %-39s │\n", dcaSize)
+	pluginLabel := getPluginLabel(pluginID)
+	if pluginFile != "" {
+		fmt.Printf("│    %s (MinIO): ✓ %-38s │\n", pluginLabel, pluginSize)
 	} else {
-		fmt.Printf("│    DCA Plugin (MinIO): ✗ %-39s │\n", "Not found")
+		fmt.Printf("│    %s (MinIO): ✗ %-38s │\n", pluginLabel, "Not found")
 	}
 	fmt.Println("│                                                                 │")
 	fmt.Println("│  Database:                                                      │")
@@ -400,7 +430,24 @@ func getSignerRole(signer, localPartyID string) string {
 	if strings.HasPrefix(signer, "dca-worker-") {
 		return "(DCA Plugin)"
 	}
+	if strings.HasPrefix(signer, "sends-worker-") {
+		return "(Sends Plugin)"
+	}
 	return ""
+}
+
+func getPluginBucket(pluginID string) string {
+	if strings.Contains(pluginID, "send") {
+		return "vultisig-sends"
+	}
+	return "vultisig-dca"
+}
+
+func getPluginLabel(pluginID string) string {
+	if strings.Contains(pluginID, "send") {
+		return "Sends Plugin"
+	}
+	return "DCA Plugin  "
 }
 
 func checkMinioFileWithRetry(bucket, pluginID, publicKey string, maxRetries int) (string, string) {
@@ -473,6 +520,30 @@ func checkPluginInstallation(pluginID, publicKey string) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
+func checkPluginInstallationProduction(cfg *DevConfig, pluginID, publicKey string) (bool, error) {
+	url := fmt.Sprintf("%s/vault/exist/%s/%s", cfg.Verifier, pluginID, publicKey)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return false, err
+	}
+
+	if cfg.AuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK, nil
+}
+
 func runPluginUninstall(pluginID string) error {
 	startTime := time.Now()
 
@@ -488,12 +559,87 @@ func runPluginUninstall(pluginID string) error {
 	fmt.Printf("Uninstalling plugin %s...\n", pluginID)
 	fmt.Printf("  Vault: %s\n", cfg.PublicKeyECDSA[:16]+"...")
 
+	isProduction := strings.Contains(cfg.Verifier, "vultisig.com")
+
+	if isProduction {
+		return runPluginUninstallProduction(cfg, pluginID, startTime)
+	}
+
+	return runPluginUninstallLocal(cfg, pluginID, startTime)
+}
+
+func runPluginUninstallProduction(cfg *DevConfig, pluginID string, startTime time.Time) error {
+	if cfg.AuthToken == "" {
+		return fmt.Errorf("not authenticated. Run 'vcli auth login' first")
+	}
+
+	fmt.Printf("  Verifier: %s\n", cfg.Verifier)
+
+	fmt.Println("\nRemoving plugin via verifier API...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	url := fmt.Sprintf("%s/plugin/%s", cfg.Verifier, pluginID)
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	totalDuration := time.Since(startTime)
+
+	fmt.Println()
+	fmt.Println("┌─────────────────────────────────────────────────────────────────┐")
+	fmt.Println("│ PLUGIN UNINSTALL                                                │")
+	fmt.Println("├─────────────────────────────────────────────────────────────────┤")
+	fmt.Println("│                                                                 │")
+	fmt.Printf("│  Plugin:    %-52s │\n", pluginID)
+	fmt.Printf("│  Vault:     %-52s │\n", cfg.PublicKeyECDSA[:16]+"...")
+	fmt.Println("│                                                                 │")
+
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
+		fmt.Printf("│  Status:    ✓ %-50s │\n", "Uninstalled successfully")
+	} else if resp.StatusCode == http.StatusNotFound {
+		fmt.Printf("│  Status:    - %-50s │\n", "Plugin was not installed")
+	} else {
+		fmt.Printf("│  Status:    ✗ %-50s │\n", fmt.Sprintf("Failed (%d)", resp.StatusCode))
+		fmt.Printf("│  Response:  %-52s │\n", truncateString(string(body), 50))
+	}
+
+	fmt.Println("│                                                                 │")
+	fmt.Printf("│  Total Time: %-51s │\n", totalDuration.Round(time.Millisecond).String())
+	fmt.Println("│                                                                 │")
+	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
+	fmt.Println()
+	fmt.Println("Next: vcli plugin install", pluginID, "--password <password>")
+
+	return nil
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
+}
+
+func runPluginUninstallLocal(cfg *DevConfig, pluginID string, startTime time.Time) error {
 	// Check current installation status
+	pluginBucket := getPluginBucket(pluginID)
 	dbRecord := checkPluginInstallation(pluginID, cfg.PublicKeyECDSA)
 	verifierFile, _ := checkMinioFile("vultisig-verifier", pluginID, cfg.PublicKeyECDSA)
-	dcaFile, _ := checkMinioFile("vultisig-dca", pluginID, cfg.PublicKeyECDSA)
+	pluginFile, _ := checkMinioFile(pluginBucket, pluginID, cfg.PublicKeyECDSA)
 
-	if dbRecord == "" && verifierFile == "" && dcaFile == "" {
+	if dbRecord == "" && verifierFile == "" && pluginFile == "" {
 		fmt.Println("\n  Plugin is not installed for this vault.")
 		return nil
 	}
@@ -502,7 +648,7 @@ func runPluginUninstall(pluginID string) error {
 
 	// Remove MinIO files (verifier + plugin 2-of-4 shares)
 	verifierRemoved := removeMinioFile("vultisig-verifier", pluginID, cfg.PublicKeyECDSA)
-	dcaRemoved := removeMinioFile("vultisig-dca", pluginID, cfg.PublicKeyECDSA)
+	pluginRemoved := removeMinioFile(pluginBucket, pluginID, cfg.PublicKeyECDSA)
 
 	// Remove database record
 	dbRemoved := removePluginInstallation(pluginID, cfg.PublicKeyECDSA)
@@ -526,12 +672,13 @@ func runPluginUninstall(pluginID string) error {
 	} else {
 		fmt.Printf("│    Verifier keyshare (MinIO): - %-32s │\n", "Not found")
 	}
-	if dcaRemoved {
-		fmt.Printf("│    DCA Plugin keyshare (MinIO): ✓ %-30s │\n", "Deleted")
-	} else if dcaFile != "" {
-		fmt.Printf("│    DCA Plugin keyshare (MinIO): ✗ %-30s │\n", "Failed to delete")
+	pluginLabel := getPluginLabel(pluginID)
+	if pluginRemoved {
+		fmt.Printf("│    %s keyshare (MinIO): ✓ %-29s │\n", pluginLabel, "Deleted")
+	} else if pluginFile != "" {
+		fmt.Printf("│    %s keyshare (MinIO): ✗ %-29s │\n", pluginLabel, "Failed to delete")
 	} else {
-		fmt.Printf("│    DCA Plugin keyshare (MinIO): - %-30s │\n", "Not found")
+		fmt.Printf("│    %s keyshare (MinIO): - %-29s │\n", pluginLabel, "Not found")
 	}
 	if dbRemoved {
 		fmt.Printf("│    Database record: ✓ %-42s │\n", "Deleted")
@@ -633,4 +780,103 @@ func doRequest(method, url string, body interface{}) ([]byte, int, error) {
 
 	respBody, _ := io.ReadAll(resp.Body)
 	return respBody, resp.StatusCode, nil
+}
+
+func newPluginInstalledCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "installed",
+		Short: "List installed plugins for current vault",
+		Long: `List all plugins that have been installed for the current vault.
+
+This queries the verifier to show which plugins have keyshares registered
+for your vault's public key.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPluginInstalled()
+		},
+	}
+}
+
+func runPluginInstalled() error {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	if cfg.PublicKeyECDSA == "" {
+		return fmt.Errorf("no vault configured. Run 'vcli vault import' first")
+	}
+
+	fmt.Printf("Fetching installed plugins for vault %s...\n\n", cfg.PublicKeyECDSA[:16]+"...")
+
+	url := fmt.Sprintf("%s/plugins/installed?public_key=%s", cfg.Verifier, cfg.PublicKeyECDSA)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	if cfg.AuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var result struct {
+		Data struct {
+			Plugins []struct {
+				ID          string `json:"id"`
+				Title       string `json:"title"`
+				Description string `json:"description"`
+			} `json:"plugins"`
+			TotalCount int `json:"total_count"`
+		} `json:"data"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Status int `json:"status"`
+	}
+
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return fmt.Errorf("parse response: %w", err)
+	}
+
+	if result.Error.Message != "" {
+		return fmt.Errorf("verifier error: %s", result.Error.Message)
+	}
+
+	if result.Data.TotalCount == 0 {
+		fmt.Println("No plugins installed for this vault.")
+		fmt.Println("\nTo install a plugin: vcli plugin install <plugin-id> --password <password>")
+		return nil
+	}
+
+	fmt.Printf("Installed Plugins (%d):\n\n", result.Data.TotalCount)
+	fmt.Println("┌─────────────────────────────────────┬────────────────────────────────┐")
+	fmt.Println("│ Plugin ID                           │ Name                           │")
+	fmt.Println("├─────────────────────────────────────┼────────────────────────────────┤")
+	for _, p := range result.Data.Plugins {
+		id := p.ID
+		if len(id) > 35 {
+			id = id[:32] + "..."
+		}
+		title := p.Title
+		if len(title) > 30 {
+			title = title[:27] + "..."
+		}
+		fmt.Printf("│ %-35s │ %-30s │\n", id, title)
+	}
+	fmt.Println("└─────────────────────────────────────┴────────────────────────────────┘")
+
+	fmt.Println("\nTo view policies: vcli policy list --plugin <plugin-id>")
+
+	return nil
 }

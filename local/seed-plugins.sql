@@ -66,10 +66,8 @@ VALUES
 ON CONFLICT (apikey) DO NOTHING;
 
 -- Seed plugin pricing (required for policy creation)
--- Each plugin needs pricing entries that match the billing types used in policies
 -- Types: 'once' (one-time fee), 'per-tx' (per transaction), 'recurring' (subscription)
 -- For 'once' and 'per-tx', frequency must be NULL
--- For 'recurring', frequency must be: daily, weekly, biweekly, or monthly
 -- Note: Delete existing rows first to prevent duplicates (pricings table has no unique constraint on type+plugin_id)
 DELETE FROM pricings WHERE plugin_id IN ('vultisig-dca-0000', 'vultisig-recurring-sends-0000', 'vultisig-fees-feee', 'vultisig-developer-0000');
 INSERT INTO pricings (type, frequency, amount, asset, metric, plugin_id, created_at, updated_at)

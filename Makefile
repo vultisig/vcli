@@ -1,6 +1,6 @@
 .PHONY: help init plan apply destroy cluster-setup deploy-all deploy-infra deploy-services test clean
 .PHONY: k8s-status k8s-start k8s-stop k8s-restart
-.PHONY: build start stop status logs
+.PHONY: build start stop status logs restart-agent
 
 TERRAFORM_DIR := infrastructure/terraform
 KUBECONFIG := $(shell pwd)/.kube/config
@@ -202,6 +202,12 @@ start:
 		echo "Required sibling repos: vcli, verifier, feeplugin, app-recurring"; \
 		exit 1; \
 	fi
+	@if [ ! -d "../agent-backend" ]; then \
+		echo "WARNING: ../agent-backend directory not found — agent-backend will be skipped"; \
+	fi
+	@if [ ! -d "../mcp" ]; then \
+		echo "WARNING: ../mcp directory not found — mcp server will be skipped"; \
+	fi
 	@echo "Starting infrastructure (postgres, redis, minio)..."
 	@docker compose -f $(COMPOSE_FILE) down -v --remove-orphans 2>/dev/null || true
 	docker compose -f $(COMPOSE_FILE) up -d
@@ -219,6 +225,10 @@ stop:
 	@-pkill -9 -f "go run.*cmd/server" 2>/dev/null || true
 	@-pkill -9 -f "go run.*cmd/scheduler" 2>/dev/null || true
 	@-pkill -9 -f "go run.*cmd/tx_indexer" 2>/dev/null || true
+	@-pkill -9 -f "go run.*agent-backend.*cmd/server" 2>/dev/null || true
+	@-pkill -9 -f "agent-backend-server" 2>/dev/null || true
+	@-pkill -9 -f "go run.*mcp.*cmd/mcp-server" 2>/dev/null || true
+	@-pkill -9 -f "mcp-server.*-http" 2>/dev/null || true
 	@-pkill -9 -f "go-build.*/verifier$$" 2>/dev/null || true
 	@-pkill -9 -f "go-build.*/worker$$" 2>/dev/null || true
 	@-pkill -9 -f "go-build.*/server$$" 2>/dev/null || true
@@ -230,6 +240,31 @@ stop:
 	@docker volume rm local_postgres-data local_redis-data local_minio-data 2>/dev/null || true
 	@rm -rf ~/.vultisig/vaults/ 2>/dev/null || true
 	@echo "Stopped and cleaned."
+
+restart-agent:
+	@echo "Restarting agent-backend..."
+	@-lsof -ti :8084 | xargs kill -9 2>/dev/null || true
+	@sleep 1
+	@if [ ! -d "../agent-backend" ]; then \
+		echo "ERROR: ../agent-backend directory not found"; \
+		exit 1; \
+	fi
+	@cd ../agent-backend && \
+		set -a && . ./.env && set +a && \
+		export DATABASE_DSN="postgres://vultisig:vultisig@localhost:5432/vultisig-agent?sslmode=disable" && \
+		export REDIS_URI="redis://:vultisig@localhost:6379" && \
+		export VERIFIER_URL="http://localhost:8080" && \
+		export LOG_FORMAT="text" && \
+		export SERVER_PORT="8084" && \
+		go build -o /tmp/agent-backend-server ./cmd/server && \
+		/tmp/agent-backend-server > $(CURDIR)/logs/agent-backend.log 2>&1 &
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -s http://localhost:8084/healthz > /dev/null 2>&1; then \
+			echo "Agent Backend restarted → localhost:8084"; \
+			break; \
+		fi; \
+		sleep 1; \
+	done
 
 status:
 	@docker compose -f $(COMPOSE_FILE) ps
@@ -244,6 +279,8 @@ logs:
 	@echo "  tail -f local/logs/dca-scheduler.log"
 	@echo "  tail -f local/logs/fee-server.log"
 	@echo "  tail -f local/logs/fee-worker.log"
+	@echo "  tail -f local/logs/agent-backend.log"
+	@echo "  tail -f local/logs/mcp-server.log"
 	@echo ""
 	@echo "All logs: tail -f local/logs/*.log"
 
