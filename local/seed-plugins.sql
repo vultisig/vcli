@@ -1,7 +1,7 @@
 -- Seed plugins for local development
 -- Run with: make seed
 
-INSERT INTO plugins (id, title, description, server_endpoint, category, logo_url, thumbnail_url, images, features, faqs, audited, created_at, updated_at)
+INSERT INTO plugins (id, title, description, server_endpoint, category, features, faqs, audited, created_at, updated_at)
 VALUES
 (
     'vultisig-fees-feee',
@@ -9,9 +9,6 @@ VALUES
     'Automatic fee collection for Vultisig transactions',
     'http://localhost:8085',
     'plugin',
-    'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/fees/icon.jpg',
-    'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/fees/thumbnail.jpg',
-    '[]',
     '["Automatic fee deduction", "Multi-chain support", "Transparent pricing"]',
     '[]',
     false,
@@ -24,9 +21,6 @@ VALUES
     'Automated recurring swaps and transfers',
     'http://localhost:8082',
     'app',
-    'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/dca/icon.jpg',
-    'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/dca/thumbnail.jpg',
-    '[]',
     '["Recurring swaps", "Multi-chain support", "Flexible scheduling"]',
     '[]',
     false,
@@ -39,9 +33,6 @@ VALUES
     'Automated recurring token transfers',
     'http://localhost:8083',
     'app',
-    'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/recurring-sends/icon.jpg',
-    'https://raw.githubusercontent.com/vultisig/verifier/main/assets/plugins/recurring-sends/thumbnail.jpg',
-    '[]',
     '["Scheduled transfers", "Multi-chain support", "Reliable execution"]',
     '[]',
     false,
@@ -62,10 +53,8 @@ VALUES
 ON CONFLICT (apikey) DO NOTHING;
 
 -- Seed plugin pricing (required for policy creation)
--- Each plugin needs pricing entries that match the billing types used in policies
 -- Types: 'once' (one-time fee), 'per-tx' (per transaction), 'recurring' (subscription)
 -- For 'once' and 'per-tx', frequency must be NULL
--- For 'recurring', frequency must be: daily, weekly, biweekly, or monthly
 -- Note: Delete existing rows first to prevent duplicates (pricings table has no unique constraint on type+plugin_id)
 DELETE FROM pricings WHERE plugin_id IN ('vultisig-dca-0000', 'vultisig-recurring-sends-0000', 'vultisig-fees-feee');
 INSERT INTO pricings (type, frequency, amount, asset, metric, plugin_id, created_at, updated_at)

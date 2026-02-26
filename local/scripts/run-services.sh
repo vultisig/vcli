@@ -6,7 +6,7 @@
 # Prerequisites:
 # - Docker running with postgres, redis, minio (via docker-compose.yaml)
 # - Go installed
-# - Sibling repos: ../verifier, ../app-recurring, ../agent-backend
+# - Sibling repos: ../verifier, ../app-recurring, ../agent-backend, ../mcp
 
 set -e
 
@@ -47,6 +47,10 @@ if [ ! -d "$ROOT_DIR/agent-backend" ]; then
     echo -e "${YELLOW}WARNING: agent-backend repo not found at $ROOT_DIR/agent-backend — skipping${NC}"
 fi
 
+if [ ! -d "$ROOT_DIR/mcp" ]; then
+    echo -e "${YELLOW}WARNING: mcp repo not found at $ROOT_DIR/mcp — skipping${NC}"
+fi
+
 # Create logs directory
 LOG_DIR="$VCLI_DIR/logs"
 mkdir -p "$LOG_DIR"
@@ -82,6 +86,8 @@ pkill -9 -f "go run.*cmd/scheduler" 2>/dev/null || true
 pkill -9 -f "go run.*cmd/tx_indexer" 2>/dev/null || true
 pkill -9 -f "go run.*agent-backend.*cmd/server" 2>/dev/null || true
 pkill -9 -f "agent-backend-server" 2>/dev/null || true
+pkill -9 -f "go run.*mcp.*cmd/mcp-server" 2>/dev/null || true
+pkill -9 -f "mcp-server.*-http" 2>/dev/null || true
 # Also kill compiled binaries in go-build cache
 pkill -9 -f "go-build.*/verifier$" 2>/dev/null || true
 pkill -9 -f "go-build.*/worker$" 2>/dev/null || true
@@ -354,6 +360,40 @@ SENDS_TX_INDEXER_PID=$!
 echo -e "  ${GREEN}✓${NC} Sends TX Indexer (PID: $SENDS_TX_INDEXER_PID)"
 
 # ============================================
+# MCP SERVER (must start before agent-backend)
+# ============================================
+
+if [ -d "$ROOT_DIR/mcp" ]; then
+    echo -e "${CYAN}Starting MCP Server...${NC}"
+    cd "$ROOT_DIR/mcp"
+
+    export ETH_RPC_URL="https://ethereum-rpc.publicnode.com"
+    export BLOCKCHAIR_API_URL="https://api.vultisig.com/blockchair"
+
+    go build -o /tmp/mcp-server ./cmd/mcp-server
+    /tmp/mcp-server -http :8086 > "$LOG_DIR/mcp-server.log" 2>&1 &
+    MCP_SERVER_PID=$!
+    echo -e "  ${GREEN}✓${NC} MCP Server (PID: $MCP_SERVER_PID) → localhost:8086/mcp"
+
+    echo -e "  ${YELLOW}⏳${NC} Waiting for MCP Server..."
+    for i in {1..15}; do
+        if curl -s --max-time 2 -X POST -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+            http://localhost:8086/mcp > /dev/null 2>&1; then
+            echo -e "  ${GREEN}✓${NC} MCP Server ready"
+            break
+        fi
+        if grep -q "Fatalf\|fatal\|FATA" "$LOG_DIR/mcp-server.log" 2>/dev/null; then
+            echo -e "  ${RED}✗${NC} MCP Server failed to start. Check logs/mcp-server.log"
+            break
+        fi
+        sleep 1
+    done
+else
+    echo -e "${YELLOW}Skipping MCP Server (repo not found)${NC}"
+fi
+
+# ============================================
 # AGENT BACKEND
 # ============================================
 
@@ -375,6 +415,7 @@ if [ -d "$ROOT_DIR/agent-backend" ]; then
     export REDIS_URI="redis://:vultisig@localhost:6379"
     export VERIFIER_URL="http://localhost:8080"
     export DCA_PLUGIN_URL="http://localhost:8082"
+    export AUTH_CACHE_KEY_SECRET="local-dev-secret-key"
     export LOG_FORMAT="text"
 
     go build -o /tmp/agent-backend-server ./cmd/server
@@ -436,6 +477,9 @@ echo -e "    Sends TX Indexer     (background)"
 if [ -d "$ROOT_DIR/agent-backend" ]; then
 echo -e "    Agent Backend API    localhost:8084"
 fi
+if [ -d "$ROOT_DIR/mcp" ]; then
+echo -e "    MCP Server           localhost:8086/mcp"
+fi
 echo ""
 echo -e "  ${CYAN}Infrastructure (Docker):${NC}"
 echo -e "    PostgreSQL           localhost:5432"
@@ -447,11 +491,12 @@ echo -e "    tail -f $LOG_DIR/verifier.log"
 echo -e "    tail -f $LOG_DIR/dca-server.log"
 echo -e "    tail -f $LOG_DIR/sends-server.log"
 echo -e "    tail -f $LOG_DIR/agent-backend.log"
+echo -e "    tail -f $LOG_DIR/mcp-server.log"
 echo -e "    (or any file in $LOG_DIR/)"
 echo ""
 echo -e "  ${CYAN}Stop:${NC} make stop"
 echo ""
-echo -e "${GREEN}Edit code in ../verifier, ../app-recurring, or ../agent-backend, then restart with 'make start'${NC}"
+echo -e "${GREEN}Edit code in ../verifier, ../app-recurring, ../agent-backend, or ../mcp, then restart with 'make start'${NC}"
 echo ""
 
 # Save PIDs for later cleanup
@@ -467,4 +512,7 @@ echo "$SENDS_SCHEDULER_PID" > "$LOG_DIR/sends-scheduler.pid"
 echo "$SENDS_TX_INDEXER_PID" > "$LOG_DIR/sends-tx-indexer.pid"
 if [ -n "${AGENT_BACKEND_PID:-}" ]; then
     echo "$AGENT_BACKEND_PID" > "$LOG_DIR/agent-backend.pid"
+fi
+if [ -n "${MCP_SERVER_PID:-}" ]; then
+    echo "$MCP_SERVER_PID" > "$LOG_DIR/mcp-server.pid"
 fi

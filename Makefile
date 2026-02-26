@@ -205,6 +205,9 @@ start:
 	@if [ ! -d "../agent-backend" ]; then \
 		echo "WARNING: ../agent-backend directory not found — agent-backend will be skipped"; \
 	fi
+	@if [ ! -d "../mcp" ]; then \
+		echo "WARNING: ../mcp directory not found — mcp server will be skipped"; \
+	fi
 	@echo "Starting infrastructure (postgres, redis, minio)..."
 	@docker compose -f $(COMPOSE_FILE) down -v --remove-orphans 2>/dev/null || true
 	docker compose -f $(COMPOSE_FILE) up -d
@@ -224,6 +227,8 @@ stop:
 	@-pkill -9 -f "go run.*cmd/tx_indexer" 2>/dev/null || true
 	@-pkill -9 -f "go run.*agent-backend.*cmd/server" 2>/dev/null || true
 	@-pkill -9 -f "agent-backend-server" 2>/dev/null || true
+	@-pkill -9 -f "go run.*mcp.*cmd/mcp-server" 2>/dev/null || true
+	@-pkill -9 -f "mcp-server.*-http" 2>/dev/null || true
 	@-pkill -9 -f "go-build.*/verifier$$" 2>/dev/null || true
 	@-pkill -9 -f "go-build.*/worker$$" 2>/dev/null || true
 	@-pkill -9 -f "go-build.*/server$$" 2>/dev/null || true
@@ -275,6 +280,7 @@ logs:
 	@echo "  tail -f local/logs/fee-server.log"
 	@echo "  tail -f local/logs/fee-worker.log"
 	@echo "  tail -f local/logs/agent-backend.log"
+	@echo "  tail -f local/logs/mcp-server.log"
 	@echo ""
 	@echo "All logs: tail -f local/logs/*.log"
 
